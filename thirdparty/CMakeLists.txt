@@ -29,15 +29,23 @@ add_subdirectory(glad EXCLUDE_FROM_ALL)
 target_include_directories(glad INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/glad/include)
 
 # luajit
-set(LUAJIT_DIR ${CMAKE_CURRENT_LIST_DIR}/luajit)
-include(${CMAKE_CURRENT_LIST_DIR}/luajit-cmake/LuaJIT.cmake)
-target_include_directories(libluajit INTERFACE ${CMAKE_CURRENT_BINARY_DIR})
-set_target_properties(libluajit PROPERTIES COMPILE_FLAGS "${CMAKE_C_FLAGS}" LINK_FLAGS "${CMAKE_MODULE_LINKER_FLAGS}") # Make it compile under x86.
-if(OE_USE_SANITIZERS AND NOT CMAKE_CROSSCOMPILING) # A cross build makes the host tools in a separate project that never sees these flags.
-    foreach(TOOL minilua buildvm) # Luajit runs these during the build, and they leak by design.
-        target_compile_options(${TOOL} PRIVATE -fno-sanitize=all)
-        target_link_options(${TOOL} PRIVATE -fno-sanitize=all)
-    endforeach()
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    # Upstream luajit has no vita allocator (needs sys/mman.h); use the vdpm prebuilt (LuaJIT-Vita, TARGET_SYS=PSP2).
+    add_library(libluajit STATIC IMPORTED GLOBAL)
+    set_target_properties(libluajit PROPERTIES
+        IMPORTED_LOCATION "${VITASDK}/arm-vita-eabi/lib/libluajit-5.1.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${VITASDK}/arm-vita-eabi/include/luajit-2.1")
+else()
+    set(LUAJIT_DIR ${CMAKE_CURRENT_LIST_DIR}/luajit)
+    include(${CMAKE_CURRENT_LIST_DIR}/luajit-cmake/LuaJIT.cmake)
+    target_include_directories(libluajit INTERFACE ${CMAKE_CURRENT_BINARY_DIR})
+    set_target_properties(libluajit PROPERTIES COMPILE_FLAGS "${CMAKE_C_FLAGS}" LINK_FLAGS "${CMAKE_MODULE_LINKER_FLAGS}") # Make it compile under x86.
+    if(OE_USE_SANITIZERS AND NOT CMAKE_CROSSCOMPILING) # A cross build makes the host tools in a separate project that never sees these flags.
+        foreach(TOOL minilua buildvm) # Luajit runs these during the build, and they leak by design.
+            target_compile_options(${TOOL} PRIVATE -fno-sanitize=all)
+            target_link_options(${TOOL} PRIVATE -fno-sanitize=all)
+        endforeach()
+    endif()
 endif()
 if(TARGET check_tidy)
     add_dependencies(check_tidy libluajit) # Scripting sources include the luajit.h that's generated here.
@@ -73,7 +81,7 @@ endif()
 
 # cpptrace, it clones libdwarf with FetchContent at configure time. The options below are libdwarf's and
 # cpptrace's, and they only take effect thanks to the CMP0077 default set at the top of this file.
-if(NOT OE_BUILD_PLATFORM STREQUAL "android")
+if(NOT OE_BUILD_PLATFORM STREQUAL "android" AND NOT OE_BUILD_PLATFORM STREQUAL "vita")
     # Cpptrace picks execinfo on macos, which starts traces two frames in - a trace taken inside
     # stackTraceToString opens at its caller's caller, and FunctionNamesAreResolved fails exactly that way.
     # The built-in unwinder is what the C++ runtime unwinds with - libgcc on linux, the system libunwind on
@@ -98,3 +106,9 @@ add_subdirectory(lambda2)
 # ztd.text
 set(ZTD_IDK_EXCLUDE_FROM_ALL ON)
 add_subdirectory(ztd_text EXCLUDE_FROM_ALL)
+
+# C11 <uchar.h> shims for Vita newlib.
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    add_library(vita_shims STATIC ${CMAKE_CURRENT_LIST_DIR}/vita_shims/uchar_shim.c ${CMAKE_CURRENT_LIST_DIR}/vita_shims/mmap_shim.c ${CMAKE_CURRENT_LIST_DIR}/vita_shims/stdio_lock_shim.c)
+    target_include_directories(vita_shims PUBLIC ${CMAKE_CURRENT_LIST_DIR}/vita_shims/include)
+endif()

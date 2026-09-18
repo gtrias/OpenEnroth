@@ -19,7 +19,7 @@
 
 #include "KeyConfigEntry.h"
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__vita__)
 #   define ConfigRenderer RENDERER_OPENGL_ES
 #   define ConfigWindowMode WINDOW_MODE_FULLSCREEN_BORDERLESS
 #else

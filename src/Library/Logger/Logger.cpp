@@ -7,11 +7,23 @@
 #include "LogSource.h"
 #include "FallbackLogSink.h"
 
+#if defined(__vita__)
+static FallbackLogSink fallbackSink; // see Logger.h: no constinit on vita.
+#else
 static constinit FallbackLogSink fallbackSink;
+#endif
 
+#if defined(__vita__)
+Logger Logger::fallbackLogger = Logger(detail::detached, LOG_TRACE, &fallbackSink); // see Logger.h: no constinit on vita.
+#else
 constinit Logger Logger::fallbackLogger = Logger(detail::detached, LOG_TRACE, &fallbackSink);
+#endif
 
+#if defined(__vita__)
+Logger *detail::logger = detail::fallbackLogger(); // see Logger.h: no constinit on vita.
+#else
 constinit Logger *detail::logger = detail::fallbackLogger();
+#endif
 
 Logger::Logger(LogLevel level, LogSink *sink) {
     assert(sink);

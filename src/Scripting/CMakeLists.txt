@@ -41,3 +41,7 @@ target_link_libraries(scripting
         PRIVATE
         libluajit
         sol2::sol2)
+
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    target_link_libraries(scripting PRIVATE dl taihen_stub SceSblSsMgr_stub) # luajit's FFI (lj_clib) uses dlopen/dlclose via vita-rss-libdl; libdl needs taihen + SceSblSsMgr.
+endif()

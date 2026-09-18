@@ -33,6 +33,11 @@
 
 #include "OpenEnrothOptions.h"
 
+#ifdef __vita__
+// vita-elf-create appends its SCE relocation table after segment 0; pad the gap to the next segment.
+__asm__(".section .vita_sce_pad, \"ax\", %progbits\n.space 8192\n.text\n");
+#endif
+
 void migrateTrace(OpenEnrothOptions::Migration migration, EventTrace *trace) {
     std::unordered_set<PlatformKey> continuousKeys, onceKeys;
     for (InputAction inputAction : allInputActions())

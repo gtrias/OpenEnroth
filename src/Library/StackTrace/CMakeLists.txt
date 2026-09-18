@@ -12,8 +12,12 @@ add_library(library_stack_trace STATIC ${LIBRARY_STACK_TRACE_SOURCES} ${LIBRARY_
 target_link_libraries(library_stack_trace PUBLIC utility)
 target_check_style(library_stack_trace)
 
+if (OE_BUILD_PLATFORM STREQUAL "vita")
+    target_compile_definitions(library_stack_trace PUBLIC OE_BUILD_VITA=1) # cpptrace doesn't support vita.
+endif ()
+
 # cpptrace doesn't support Android...
-if (NOT OE_BUILD_PLATFORM STREQUAL "android")
+if (NOT OE_BUILD_PLATFORM STREQUAL "android" AND NOT OE_BUILD_PLATFORM STREQUAL "vita")
     target_link_libraries(library_stack_trace PRIVATE cpptrace::cpptrace)
 endif ()
 

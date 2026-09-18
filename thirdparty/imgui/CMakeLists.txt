@@ -27,6 +27,10 @@ add_library(imgui_backends STATIC ${IMGUI_BACKENDS_SOURCES} ${IMGUI_BACKENDS_HEA
 target_link_libraries(imgui_backends PRIVATE SDL3::SDL3 glad)
 target_include_directories(imgui_backends PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/imgui/backends)
 
+if (OE_BUILD_PLATFORM STREQUAL "vita") # vita dlfcn (vita-rss-libdl) has no RTLD_NOLOAD.
+    target_compile_definitions(imgui_backends PRIVATE RTLD_NOLOAD=0)
+endif()
+
 set(IMGUI_SOURCES
     imgui/imgui_draw.cpp
     imgui/imgui.cpp

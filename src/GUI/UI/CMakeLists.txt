@@ -65,3 +65,9 @@ target_link_libraries(gui_ui
 
 add_subdirectory(Books)
 add_subdirectory(Houses)
+
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    # UIGameOver.cpp calls GameOver_Setup/CreateWinnerCertificate from libapplication, which is linked
+    # earlier in the static link order (desktop gets away with it via shared libs).
+    target_link_libraries(gui_ui PRIVATE ${CMAKE_BINARY_DIR}/src/Application/libapplication.a)
+endif()

@@ -52,3 +52,13 @@ else()
 
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT OpenEnroth)
 endif()
+
+if(TARGET vita_shims)
+    target_link_libraries(OpenEnroth PRIVATE vita_shims)
+endif()
+
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    # libpthread.a ends up on the link line twice through two different paths (toolchain + SDL3 target);
+    # both resolve to the same vitasdk archive.
+    target_link_options(OpenEnroth PRIVATE -Wl,--allow-multiple-definition) # page gaps so vita-elf-create can place SCE data at segment ends
+endif()

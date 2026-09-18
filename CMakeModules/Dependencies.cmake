@@ -118,7 +118,7 @@ macro(resolve_dependencies) # Intentionally a macro - we want set() to work in p
 
     # On Android we somehow get OpenGL available by default, despite it not being findable by find_package. So we
     # just create a dummy lib.
-    if(OE_BUILD_PLATFORM STREQUAL "android")
+    if(OE_BUILD_PLATFORM STREQUAL "android" OR OE_BUILD_PLATFORM STREQUAL "vita")
         add_library(OpenGL_GL INTERFACE)
         add_library(OpenGL::GL ALIAS OpenGL_GL)
     else()

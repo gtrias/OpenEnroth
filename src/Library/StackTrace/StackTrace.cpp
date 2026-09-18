@@ -3,13 +3,13 @@
 #include <cstdio>
 #include <string>
 
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(OE_BUILD_VITA)
 #   include <cpptrace/cpptrace.hpp>
 #endif
 
 #include "Utility/String/Format.h"
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(OE_BUILD_VITA)
 
 std::string stackTraceToString() {
     return "Stack traces not supported on Android...";

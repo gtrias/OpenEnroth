@@ -99,6 +99,11 @@ static std::vector<NativePath> resolvePaths(Environment *environment, const Path
     //    platform->showMessageBox("Device currently unsupported", "Your device doesn't have any storage so it is unsupported!");
 #endif
 
+#ifdef __vita__
+    // ...or ux0:data on Vita (app0: is read-only and wiped on app update).
+    result.push_back(NativePath::fromWtf8("ux0:data/OpenEnroth"));
+#endif
+
 #ifdef __APPLE__
     // ...or Library/Application Support in home on macOS.
     std::string home = environment->path(PATH_HOME);

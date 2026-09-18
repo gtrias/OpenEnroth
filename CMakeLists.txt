@@ -72,6 +72,7 @@ endif()
 
 # Set up warnings-as-errors for all compilers.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    add_compile_options(-D_POSIX_C_SOURCE=200809L) # Vita newlib: expose POSIX fileno etc. (_DEFAULT_SOURCE would also enable ctype _N/_U/_L macros that collide with ztd template params).
     add_compile_options(-Werror=return-type) # Control reaches the end of non-void function. This is an error on MSVC.
     add_compile_options(-Werror=unused-result) # Ignoring return value of function declared with 'nodiscard' attribute.
     add_compile_options(-Werror=unused-value) # Expression result unused.
@@ -207,7 +208,18 @@ init_check_lua_style()
 resolve_dependencies()
 
 add_subdirectory(thirdparty)
+
+if(TARGET vita_shims)
+    link_libraries(vita_shims) # Vita newlib shims into every target below this point (all the final binaries).
+endif()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/vita_shims/include) # newlib shims: <uchar.h>, <sys/mman.h>, C11 conversions.
+    # strict POSIX visibility hides the MS/BSD math constants the engine uses; libstdc++'s <cmath>
+    # does include_next so a math.h wrapper shim is not visible to engine code.
+    add_compile_definitions(M_PI=3.14159265358979323846 M_PI_2=1.57079632679489661923 M_PI_4=0.78539816339744830962)
+endif()
 if(OE_BUILD_TESTS)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/test)
     add_subdirectory(test)

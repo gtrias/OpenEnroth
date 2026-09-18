@@ -23,6 +23,12 @@ set(MEDIA_HEADERS
 
 add_library(media STATIC ${MEDIA_SOURCES} ${MEDIA_HEADERS})
 target_link_libraries(media PRIVATE FFmpeg::avformat FFmpeg::avcodec FFmpeg::avutil FFmpeg::swscale FFmpeg::swresample)
+
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    # avutil again at the end: swscale references av_tree_* and is linked after avutil otherwise;
+    # dl is vita-rss-libdl; mp3lame is a dep of the ffmpeg mp3 encoder.
+    target_link_libraries(media PRIVATE avutil dl mp3lame mpg123)
+endif()
 target_link_libraries(media PUBLIC media_audio library_logger library_vid utility application)
 
 target_check_style(media)
