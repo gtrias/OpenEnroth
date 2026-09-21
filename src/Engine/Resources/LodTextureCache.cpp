@@ -23,6 +23,10 @@ void LodTextureCache::open(Blob blob) {
     _reader.open(std::move(blob));
 }
 
+void LodTextureCache::open(FileSystem *fs, std::string_view path) {
+    _reader.open(fs, path);
+}
+
 void LodTextureCache::reserveLoadedTextures() {
     _reservedCount = _texturesInOrder.size();
 }

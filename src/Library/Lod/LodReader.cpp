@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "Library/Compression/Compression.h"
+#include "Library/FileSystem/Interface/FileSystem.h"
 #include "Library/Snapshots/SnapshotSerialization.h"
 
 #include "Utility/Streams/BlobInputStream.h"
@@ -101,35 +102,84 @@ void LodReader::open(Blob blob, LodOpenFlags openFlags) {
     // LODs that come with the Russian version of MM7 are broken.
     rootEntry.dataSize = blob.size() - rootEntry.dataOffset;
 
-    BlobInputStream dirStream(blob.subBlob(rootEntry.dataOffset, rootEntry.dataSize));
-    std::unordered_map<std::string, LodRegion> files;
-    for (const LodEntry &entry : parseFileEntries(dirStream, rootEntry, version)) {
-        std::string name = ascii::toLower(entry.name);
-        if (files.contains(name)) {
-            if (openFlags & LOD_ALLOW_DUPLICATES) {
-                continue; // Only the first entry is kept in this case.
-            } else {
-                throw Exception("File '{}' is not a valid LOD: contains duplicate entries for '{}'", blob.displayPath(), name);
-            }
-        }
-
-        LodRegion region;
-        region.offset = rootEntry.dataOffset + entry.dataOffset;
-        region.size = entry.dataSize;
-        files.emplace(std::move(name), region);
-    }
+    BlobInputStream dirStream(blob.subBlob(rootEntry.dataOffset, rootEntry.dataSize).withDisplayPath(blob.displayPath()));
+    indexFiles(parseFileEntries(dirStream, rootEntry, version), rootEntry, openFlags, blob.displayPath());
 
     // All good, this is a valid LOD, can update `this`.
     _lod = std::move(blob);
     _info.version = version;
     _info.description = std::move(header.description);
     _info.rootName = std::move(rootEntry.name);
-    _files = std::move(files);
+}
+
+void LodReader::open(FileSystem *fs, std::string_view path, LodOpenFlags openFlags) {
+    assert(fs);
+
+    close();
+
+    std::unique_ptr<InputStream> stream = fs->openForReading(path);
+    std::string displayPath = stream->displayPath();
+
+    std::int64_t fileSize = stream->size();
+    if (fileSize < 0)
+        throw Exception("File '{}' is not a valid LOD: its size is unknown", displayPath);
+
+    size_t expectedSize = sizeof(LodHeader_MM6) + sizeof(LodEntry_MM6); // Header + directory entry.
+    if (fileSize < static_cast<std::int64_t>(expectedSize))
+        throw Exception("File '{}' is not a valid LOD: expected file size at least {} bytes, got {} bytes", displayPath, expectedSize, fileSize);
+
+    LodVersion version = LOD_VERSION_MM6;
+    LodHeader header = parseHeader(*stream, &version);
+    LodEntry rootEntry = parseDirectoryEntry(*stream, version, fileSize);
+
+    // LODs that come with the Russian version of MM7 are broken.
+    rootEntry.dataSize = fileSize - rootEntry.dataOffset;
+
+    // Only the index is read into memory - note that `rootEntry.dataSize` spans to the end of the file after the fixup
+    // above, so the file entries are read on demand in read() instead.
+    size_t indexSize = rootEntry.numItems * fileEntrySize(version);
+    stream->skipOrFail(rootEntry.dataOffset - stream->position());
+    Blob directory = Blob::read(stream.get(), indexSize).withDisplayPath(displayPath);
+
+    std::vector<LodEntry> entries = [&directory, &rootEntry, version] {
+        BlobInputStream dirStream(directory);
+        return parseFileEntries(dirStream, rootEntry, version);
+    }();
+    indexFiles(std::move(entries), rootEntry, openFlags, displayPath);
+
+    // All good, this is a valid LOD, can update `this`.
+    _fs = fs;
+    _path = std::string(path);
+    _displayPath = std::move(displayPath);
+    _info.version = version;
+    _info.description = std::move(header.description);
+    _info.rootName = std::move(rootEntry.name);
+}
+
+void LodReader::indexFiles(std::vector<LodEntry> entries, const LodEntry &rootEntry, LodOpenFlags openFlags, std::string_view displayPath) {
+    for (const LodEntry &entry : entries) {
+        std::string name = ascii::toLower(entry.name);
+        if (_files.contains(name)) {
+            if (openFlags & LOD_ALLOW_DUPLICATES) {
+                continue; // Only the first entry is kept in this case.
+            } else {
+                throw Exception("File '{}' is not a valid LOD: contains duplicate entries for '{}'", displayPath, name);
+            }
+        }
+
+        LodRegion region;
+        region.offset = rootEntry.dataOffset + entry.dataOffset;
+        region.size = entry.dataSize;
+        _files.emplace(std::move(name), region);
+    }
 }
 
 void LodReader::close() {
     // Double-closing is OK.
     _lod = Blob();
+    _fs = nullptr;
+    _path = {};
+    _displayPath = {};
     _info = {};
     _files = {};
 }
@@ -145,13 +195,22 @@ Blob LodReader::read(std::string_view filename) const {
 
     const auto pos = _files.find(ascii::toLower(filename));
     if (pos == _files.cend())
-        throw Exception("Entry '{}' doesn't exist in LOD file '{}'", filename, _lod.displayPath());
+        throw Exception("Entry '{}' doesn't exist in LOD file '{}'", filename, lodDisplayPath());
 
-    return _lod.subBlob(pos->second.offset, pos->second.size).withDisplayPath(displayPath(filename));
+    if (_lod)
+        return _lod.subBlob(pos->second.offset, pos->second.size).withDisplayPath(displayPath(filename));
+
+    std::unique_ptr<InputStream> stream = _fs->openForReading(_path);
+    stream->skipOrFail(pos->second.offset);
+    return Blob::read(stream.get(), pos->second.size).withDisplayPath(displayPath(filename));
+}
+
+std::string LodReader::lodDisplayPath() const {
+    return _lod ? _lod.displayPath() : _displayPath;
 }
 
 std::string LodReader::displayPath(std::string_view filename) const {
-    return fmt::format("{}/{}", _lod.displayPath(), filename);
+    return fmt::format("{}/{}", lodDisplayPath(), filename);
 }
 
 std::vector<std::string> LodReader::ls() const {

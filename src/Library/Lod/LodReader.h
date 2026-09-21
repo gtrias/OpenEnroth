@@ -11,6 +11,8 @@
 #include "LodInfo.h"
 
 class InputStream;
+class FileSystem;
+struct LodEntry;
 
 /**
  * A single stop shop to read LOD files.
@@ -42,12 +44,24 @@ class LodReader final {
     void open(Blob blob, LodOpenFlags openFlags = 0);
 
     /**
+     * Opens a LOD without keeping it in memory: the directory is read up front, and entries are read from `fs` on
+     * demand. This is what platforms with a tight memory budget use - the Vita has ~170 MiB of user RAM, while the
+     * game's LODs are ~166 MiB together, so holding them all resident is not an option.
+     *
+     * @param fs                        Filesystem to read the LOD from.
+     * @param path                      Path to the LOD file, relative to `fs`.
+     * @param openFlags                 Open flags.
+     * @throw Exception                 If the LOD couldn't be opened, or if it's not a valid LOD.
+     */
+    void open(FileSystem *fs, std::string_view path, LodOpenFlags openFlags = 0);
+
+    /**
      * Closes this LOD reader & frees all associated resources.
      */
     void close();
 
     [[nodiscard]] bool isOpen() const {
-        return !!_lod;
+        return !!_lod || _fs;
     }
 
     /**
@@ -88,7 +102,18 @@ class LodReader final {
     };
 
  private:
+    // Fills `_files` from a parsed directory, throwing if the LOD is malformed.
+    void indexFiles(std::vector<LodEntry> entries, const LodEntry &rootEntry, LodOpenFlags openFlags, std::string_view displayPath);
+
+    // Path of the LOD itself, for messages - uses the blob's path when loaded into memory, and the stored path when
+    // streaming.
+    [[nodiscard]] std::string lodDisplayPath() const;
+
+ private:
     Blob _lod;
+    FileSystem *_fs = nullptr; // Set when opened for streaming, in which case `_lod` is empty.
+    std::string _path;         // LOD path inside `_fs`, streaming mode only.
+    std::string _displayPath;  // LOD display path, streaming mode only.
     LodInfo _info;
     std::unordered_map<std::string, LodRegion> _files;
 };

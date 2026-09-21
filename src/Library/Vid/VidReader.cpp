@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "Library/FileSystem/Interface/FileSystem.h"
 #include "Library/Snapshots/SnapshotSerialization.h"
 
 #include "Utility/Streams/BlobInputStream.h"
@@ -38,36 +39,65 @@ void VidReader::open(Blob blob) {
 
     std::vector<VidEntry> entries;
     deserialize(stream, &entries, tags::each, tags::via<VidEntry_MM7>);
+    indexFiles(std::move(entries), blob.size(), blob.displayPath());
+
+    // All good, this is a valid VID, can update `this`.
+    _vid = std::move(blob);
+}
+
+void VidReader::open(FileSystem *fs, std::string_view path) {
+    assert(fs);
+
+    close();
+
+    std::unique_ptr<InputStream> stream = fs->openForReading(path);
+    std::string displayPath = stream->displayPath();
+
+    std::int64_t fileSize = stream->size();
+    if (fileSize < 0)
+        throw Exception("File '{}' is not a valid VID: its size is unknown", displayPath);
+
+    // Only the index - the serialized entry vector at the start of the file - is read into memory; the video data
+    // that follows it is read on demand in read().
+    std::vector<VidEntry> entries;
+    deserialize(*stream, &entries, tags::each, tags::via<VidEntry_MM7>);
+    indexFiles(std::move(entries), fileSize, displayPath);
+
+    // All good, this is a valid VID, can update `this`.
+    _fs = fs;
+    _path = std::string(path);
+    _displayPath = std::move(displayPath);
+}
+
+void VidReader::indexFiles(std::vector<VidEntry> entries, std::int64_t fileSize, std::string_view displayPath) {
     std::ranges::sort(entries, std::ranges::less(), &VidEntry::offset);
 
-    std::unordered_map<std::string, VidRegion> files;
     for (size_t i = 0; i < entries.size(); i++) {
         const VidEntry &entry = entries[i];
 
         std::string name = ascii::toLower(entry.name);
-        if (files.contains(name))
-            throw Exception("File '{}' is not a valid VID: contains duplicate entries for '{}'", blob.displayPath(), name);
+        if (_files.contains(name))
+            throw Exception("File '{}' is not a valid VID: contains duplicate entries for '{}'", displayPath, name);
 
-        if (entry.offset > blob.size())
-            throw Exception("File '{}' is not a valid VID: entry '{}' points outside the VID file", blob.displayPath(), entry.name);
+        if (entry.offset > static_cast<size_t>(fileSize))
+            throw Exception("File '{}' is not a valid VID: entry '{}' points outside the VID file", displayPath, entry.name);
 
-        size_t nextOffset = (i + 1 == entries.size()) ? blob.size() : entries[i + 1].offset;
+        size_t nextOffset = (i + 1 == entries.size()) ? fileSize : entries[i + 1].offset;
         assert(nextOffset >= entry.offset); // Follows from the fact that array is sorted.
 
         VidRegion region;
         region.offset = entry.offset;
         region.size = nextOffset - entry.offset;
-        files.emplace(std::move(name), region);
+        _files.emplace(std::move(name), region);
     }
-
-    // All good, this is a valid VID, can update `this`.
-    _vid = std::move(blob);
-    _files = std::move(files);
 }
 
 void VidReader::close() {
     // Double-closing is OK.
     _vid = Blob();
+    _fs = nullptr;
+    _path = {};
+    _displayPath = {};
     _files = {};
 }
 
@@ -82,10 +112,21 @@ Blob VidReader::read(std::string_view filename) const {
 
     const auto pos = _files.find(ascii::toLower(filename));
     if (pos == _files.cend())
-        throw Exception("Entry '{}' doesn't exist in VID file '{}'", filename, _vid.displayPath());
+        throw Exception("Entry '{}' doesn't exist in VID file '{}'", filename, vidDisplayPath());
     const VidRegion &region = pos->second;
 
-    return _vid.subBlob(region.offset, region.size).withDisplayPath(fmt::format("{}/{}", _vid.displayPath(), filename));
+    std::string displayPath = fmt::format("{}/{}", vidDisplayPath(), filename);
+
+    if (_vid)
+        return _vid.subBlob(region.offset, region.size).withDisplayPath(displayPath);
+
+    std::unique_ptr<InputStream> stream = _fs->openForReading(_path);
+    stream->skipOrFail(region.offset);
+    return Blob::read(stream.get(), region.size).withDisplayPath(displayPath);
+}
+
+std::string VidReader::vidDisplayPath() const {
+    return _vid ? _vid.displayPath() : _displayPath;
 }
 
 std::vector<std::string> VidReader::ls() const {

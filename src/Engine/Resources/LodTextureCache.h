@@ -10,6 +10,7 @@
 #include "Utility/Memory/Blob.h"
 
 struct LodImage;
+class FileSystem;
 class LodReader;
 
 class LodTextureCache {
@@ -18,6 +19,11 @@ class LodTextureCache {
     ~LodTextureCache();
 
     void open(Blob blob);
+
+    /**
+     * Opens the underlying LOD for streaming - see LodReader::open(FileSystem *).
+     */
+    void open(FileSystem *fs, std::string_view path);
 
     void reserveLoadedTextures();
     void releaseUnreserved();

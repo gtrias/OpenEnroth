@@ -28,6 +28,11 @@ bool LodSpriteCache::open(Blob blob) {
     return true;
 }
 
+bool LodSpriteCache::open(FileSystem *fs, std::string_view path) {
+    _reader.open(fs, path);
+    return true;
+}
+
 void LodSpriteCache::reserveLoadedSprites() {  // final init
     _reservedCount = _spritesInOrder.size();
 }

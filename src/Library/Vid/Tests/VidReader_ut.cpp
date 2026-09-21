@@ -4,6 +4,7 @@
 
 #include "Testing/Unit/UnitTest.h"
 
+#include "Library/FileSystem/Directory/DirectoryFileSystem.h"
 #include "Library/Snapshots/CommonSnapshots.h"
 #include "Library/Vid/VidReader.h"
 #include "Library/Vid/VidSnapshots.h"
@@ -32,6 +33,48 @@ static Blob makeVidBlob(int entryCount) {
     stream.write(std::string(entryCount * dataSize, '\0'));
     stream.close();
     return result;
+}
+
+UNIT_TEST(VidReader, StreamingMatchesInMemory) {
+    // Build a VID whose entries have distinguishable contents, so that a wrong offset or size shows up as a
+    // difference rather than as two equally-zero blobs.
+    constexpr int entries = 3;
+    constexpr size_t entrySize = 100;
+    size_t headerSize = 4 + entries * sizeof(VidEntry_MM7);
+
+    Blob vid;
+    BlobOutputStream stream(&vid);
+
+    serialize(uint32_t(entries), &stream);
+    for (int i = 0; i < entries; i++) {
+        VidEntry_MM7 entry = {};
+        snapshot(fmt::format("video{}.smk", i), &entry.name);
+        entry.offset = headerSize + i * entrySize;
+        serialize(entry, &stream);
+    }
+    for (int i = 0; i < entries; i++)
+        stream.write(std::string(entrySize, char('a' + i)));
+    stream.close();
+
+    ScopedTestFile tmp("test.vid", vid.str());
+    DirectoryFileSystem fs(NativePath(""));
+    VidReader streamed;
+    streamed.open(&fs, "test.vid");
+
+    VidReader inMemory(std::move(vid));
+
+    // Streaming must be indistinguishable from keeping the whole VID in memory.
+    EXPECT_TRUE(streamed.isOpen());
+    EXPECT_EQ(streamed.ls(), inMemory.ls());
+    for (const std::string &name : inMemory.ls()) {
+        EXPECT_EQ(streamed.read(name).size(), inMemory.read(name).size()) << "entry " << name;
+        EXPECT_EQ(streamed.read(name).str(), inMemory.read(name).str()) << "entry " << name;
+    }
+
+    // And it has to be case-insensitive, like the in-memory reader.
+    EXPECT_TRUE(streamed.exists("VIDEO0.SMK"));
+    EXPECT_EQ(streamed.read("VIDEO0.SMK").str(), inMemory.read("VIDEO0.SMK").str());
+    EXPECT_THROW((void) streamed.read("nope.smk"), std::exception);
 }
 
 UNIT_TEST(VidDetect, ValidVid) {

@@ -8,6 +8,9 @@
 #include "Utility/Memory/Blob.h"
 #include "Utility/System/NativePath.h"
 
+class FileSystem;
+struct VidEntry;
+
 /**
  * Reader for Might&Magic VID files.
  */
@@ -32,12 +35,23 @@ class VidReader {
     void open(Blob blob);
 
     /**
+     * Opens a VID without keeping it in memory: only the index is read up front, and entries are read from `fs` on
+     * demand. This is what platforms with a tight memory budget use - `might7.vid` alone is 110 MiB, more than the
+     * Vita has free for the engine.
+     *
+     * @param fs                        Filesystem to read the VID from.
+     * @param path                      Path to the VID file, relative to `fs`.
+     * @throw Exception                 If the VID couldn't be opened, or if it's not a valid VID.
+     */
+    void open(FileSystem *fs, std::string_view path);
+
+    /**
      * Closes this VID reader & frees all associated resources.
      */
     void close();
 
     [[nodiscard]] bool isOpen() const {
-        return !!_vid;
+        return !!_vid || _fs;
     }
 
     /**
@@ -65,7 +79,18 @@ class VidReader {
     };
 
  private:
+    // Fills `_files` from a parsed index, throwing if the VID is malformed.
+    void indexFiles(std::vector<VidEntry> entries, std::int64_t fileSize, std::string_view displayPath);
+
+    // Path of the VID itself, for messages - uses the blob's path when loaded into memory, and the stored path when
+    // streaming.
+    [[nodiscard]] std::string vidDisplayPath() const;
+
+ private:
     Blob _vid;
+    FileSystem *_fs = nullptr; // Set when opened for streaming, in which case `_vid` is empty.
+    std::string _path;         // VID path inside `_fs`, streaming mode only.
+    std::string _displayPath;  // VID display path, streaming mode only.
     std::unordered_map<std::string, VidRegion> _files;
 };
 

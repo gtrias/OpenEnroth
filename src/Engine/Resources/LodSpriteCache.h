@@ -10,6 +10,7 @@
 #include "Library/Image/Image.h"
 #include "Library/Lod/LodReader.h"
 
+class FileSystem;
 class LodReader;
 struct LodSprite;
 
@@ -19,6 +20,11 @@ class LodSpriteCache {
     ~LodSpriteCache();
 
     bool open(Blob blob);
+
+    /**
+     * Opens the underlying LOD for streaming - see LodReader::open(FileSystem *).
+     */
+    bool open(FileSystem *fs, std::string_view path);
 
     void reserveLoadedSprites();
     void releaseUnreserved();
