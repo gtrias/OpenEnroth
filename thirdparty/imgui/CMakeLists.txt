@@ -8,6 +8,14 @@ function(copy_and_patch_imgui_file src_path dst_path)
     string(REPLACE "#include <GLES3/gl3.h>" "#include <glad/gl.h>" file_contents "${file_contents}")
     string(REPLACE "#include <GLES2/gl2.h>" "#include <glad/gl.h>" file_contents "${file_contents}")
     string(REPLACE "#include \"imgui.h\"" "#include <imgui/imgui.h>" file_contents "${file_contents}")
+    string(REPLACE "#include \"imgui_internal.h\"" "#include <imgui/imgui_internal.h>" file_contents "${file_contents}")
+    # Vita: newlib has no fork/exec, so the default OpenInShell implementation doesn't compile there. Stub it out
+    # here instead of carrying a patch inside the submodule.
+    string(REPLACE "#else
+#include <sys/wait.h>" "#elif defined(__vita__)
+static bool Platform_OpenInShellFn_DefaultImpl(ImGuiContext*, const char*) { return false; } // newlib has no fork/exec
+#else
+#include <sys/wait.h>" file_contents "${file_contents}")
     file(WRITE "${dst_path}" "${file_contents}")
 endfunction()
 
@@ -36,9 +44,11 @@ if (OE_BUILD_PLATFORM STREQUAL "vita") # vita dlfcn (vita-rss-libdl) has no RTLD
     target_compile_definitions(imgui_backends PRIVATE IMGUI_IMPL_OPENGL_ES2=1)
 endif()
 
+copy_and_patch_imgui_file(${CMAKE_CURRENT_SOURCE_DIR}/imgui/imgui.cpp ${IMGUI_BACKENDS_SOURCE_DIR}/imgui/imgui.cpp)
+
 set(IMGUI_SOURCES
+    ${IMGUI_BACKENDS_SOURCE_DIR}/imgui/imgui.cpp
     imgui/imgui_draw.cpp
-    imgui/imgui.cpp
     imgui/imgui_demo.cpp
     imgui/imgui_draw.cpp
     imgui/imgui_tables.cpp
