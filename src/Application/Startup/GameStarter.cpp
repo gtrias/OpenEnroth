@@ -253,10 +253,12 @@ void GameStarter::initialize() {
     _scriptingSystem->addBindings<AudioBindings>("audio");
     _scriptingSystem->addBindings<RendererBindings>("renderer");
 #ifdef __vita__
-    // TODO: the script entry point currently takes the process down on Vita (an uncaught exception somewhere in the
-    // init.lua require chain - LuaJIT is C code without unwind tables, so it surfaces as a bare std::terminate). The
-    // scripts only provide the dev console, cheats and overlays, so skip them for now to get the game rendering.
-    MM_WARNING("Skipping script entry point 'scripts/init.lua' on Vita - see docs/VITA.md.");
+    // The script entry point used to take the process down with a bare std::terminate - but that was before the
+    // main-thread stack was raised to 8 MiB: deep Lua require chains plus sol2 use a lot of stack, and the old crash
+    // had the same stack-overflow signature as the character creation one. executeEntryPoint catches script errors
+    // itself on Vita, so a genuine Lua failure now degrades to a log line instead of a crash.
+    MM_INFO("Executing script entry point 'scripts/init.lua' on Vita (guarded).");
+    _scriptingSystem->executeEntryPoint();
 #else
     _scriptingSystem->executeEntryPoint();
 #endif
