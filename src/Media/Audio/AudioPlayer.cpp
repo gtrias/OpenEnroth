@@ -61,7 +61,7 @@ void AudioPlayer::MusicPlayTrack(MusicId eTrack) {
             MM_WARNING("AudioPlayer: {} not found", file_path);
             return;
         }
-
+        MM_INFO("Loading music track '{}'.", dfs->displayPath(file_path));
         pCurrentMusicTrack = CreateAudioTrack(dfs->read(file_path));
         if (pCurrentMusicTrack) {
             currentMusicTrack = eTrack;
@@ -375,6 +375,9 @@ bool AudioPlayer::loadSoundDataSource(SoundInfo* si) {
 }
 
 void AudioPlayer::UpdateSounds() {
+    if (!provider)
+        return; // Provider creation is conditional, see MPlayer::MPlayer().
+
     float pitch = M_PI * pParty->_viewPitch / 1024.f;
     float yaw = M_PI * pParty->_viewYaw / 1024.f;
 

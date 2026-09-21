@@ -402,8 +402,8 @@ class Movie : public IMovie {
     }
 
     bool LoadFromLOD(const Blob &blob) {
+        MM_INFO("Loading movie '{}'.", blob.displayPath());
         _ioContext.reset(Blob::share(blob));
-
         if (!format_ctx) {
             format_ctx = avformat_alloc_context();
         }
@@ -750,8 +750,14 @@ class Movie : public IMovie {
 };
 
 void MPlayer::Initialize() {
+#ifdef __vita__
+    // See VidReader::open(FileSystem *): these files are ~100 MiB each, more than the engine can hold in memory.
+    might_list.open(dfs, "anims/might7.vid");
+    magic_list.open(dfs, "anims/magic7.vid");
+#else
     might_list.open(dfs->read("anims/might7.vid"));
     magic_list.open(dfs->read("anims/magic7.vid"));
+#endif
 }
 
 void MPlayer::OpenHouseMovie(std::string_view pMovieName, bool bLoop) {
@@ -964,11 +970,15 @@ MPlayer::MPlayer() {
     logProxy = std::make_unique<FFmpegLogProxy>();
     pMovie_Track = nullptr;
 
+#ifndef __vita__
+    // On Vita audio is disabled (the vitasdk ffmpeg/SDL audio stack crashes mid-game with a 64 KiB memset onto the
+    // stack), and this constructor runs before NoSound can gate it - it used to open the OpenAL device anyway.
     if (!provider) {
         provider = new OpenALSoundProvider;
         // logger->Warning("allocation dynamic memory for provider");
         provider->Initialize();
     }
+#endif
 }
 
 MPlayer::~MPlayer() {

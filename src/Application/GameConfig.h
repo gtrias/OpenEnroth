@@ -89,17 +89,32 @@ class GameConfig : public Config {
         Bool ShowPickedFace = {this, "show_picked_face", false,
             "Face pointed with mouse will flash with red for buildings or green for dungeons."};
 
-        Bool NoIntro = {this, "no_intro", false,
+        Bool NoIntro = {this, "no_intro",
+#ifdef __vita__
+            true, // The intro movie needs Bink/Smacker decoders that the port's ffmpeg build doesn't have.
+#else
+            false,
+#endif
             "Skip intro movie on startup."};
 
         Bool NoLogo = {this, "no_logo", false,
             "Skip 3do logo on startup."};
 
         // TODO(captainurist): Move to [audio]?
-        Bool NoSound = {this, "no_sound", false,
+        Bool NoSound = {this, "no_sound",
+#ifdef __vita__
+            true, // The vitasdk ffmpeg build crashes in read_frame_internal decoding mp3s - no audio until that's fixed.
+#else
+            false,
+#endif
             "Don't play any sounds. Currently in-house movies are not affected."};
 
-        Bool NoVideo = {this, "no_video", false,
+        Bool NoVideo = {this, "no_video",
+#ifdef __vita__
+            true, // Same as NoIntro - ffmpeg from vitasdk can't open MM7's .vid movies.
+#else
+            false,
+#endif
             "Don't play any movies."};
 
         Bool NoActors = {this, "no_actors", false,
@@ -475,9 +490,9 @@ class GameConfig : public Config {
         Int RenderHeight = {this, "render_height", 480, &ValidateRenderHeight, "Internal rendered resolution height"};
 
         // TODO(captainurist): #enum, will need to support cycleIncrement for enums entries.
-        Int RenderFilter = {this, "render_filter", 2, &ValidateRenderFilter,
-                            "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
-                            " 0 - disabled (render dimensions will always match window dimensions), 1 - linear filter, 2 - nearest filter"};
+
+        Bool GenerateTiles = {this, "generate_tiles", true,
+            "Auto-generate missing tiles on startup and use them where appropriate. MM7 missed some tile transitions, this option fixes this issue."};
 
         Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes"};
         Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes"};
@@ -485,9 +500,16 @@ class GameConfig : public Config {
         Bool AlwaysCustomCursor = {this, "always_custom_cursor", false,
             "Always draw a custom cursor using the graphics API and hide the system cursor, even if it's the default mouse arrow cursor."};
 
-        Bool GenerateTiles = {this, "generate_tiles", true,
-            "Auto-generate missing tiles on startup and use them where appropriate. MM7 missed some tile transitions, this option fixes this issue."};
-
+        Int RenderFilter = {this, "render_filter",
+#ifdef __vita__
+            0, // vitaGL's framebuffer-object path fails on the attach (INVALID_ENUM every frame), which garbles the
+               // image - render directly at window resolution until that's investigated.
+#else
+            2,
+#endif
+            &ValidateRenderFilter,
+            "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
+            " 0 - disabled (render dimensions will always match window dimensions), 1 - linear filter, 2 - nearest filter"};
         ColorEntry DefaultLightColor = {this, "default_light_color", Color(185, 185, 185), "Some light sources have black color. Use this color for such lights instead."};
         Bool AddMoreLights = {this, "add_more_lights", true, "add light sources to pedestals/cauldrons/etc (as in MM8)"};
         Int DefaultLightRadius = {this, "default_light_radius", 172, "Light radius of the additional lights."};

@@ -6,6 +6,7 @@ set(IMGUI_BACKENDS_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/)
 function(copy_and_patch_imgui_file src_path dst_path)
     file(READ "${src_path}" file_contents)
     string(REPLACE "#include <GLES3/gl3.h>" "#include <glad/gl.h>" file_contents "${file_contents}")
+    string(REPLACE "#include <GLES2/gl2.h>" "#include <glad/gl.h>" file_contents "${file_contents}")
     string(REPLACE "#include \"imgui.h\"" "#include <imgui/imgui.h>" file_contents "${file_contents}")
     file(WRITE "${dst_path}" "${file_contents}")
 endfunction()
@@ -29,6 +30,10 @@ target_include_directories(imgui_backends PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${
 
 if (OE_BUILD_PLATFORM STREQUAL "vita") # vita dlfcn (vita-rss-libdl) has no RTLD_NOLOAD.
     target_compile_definitions(imgui_backends PRIVATE RTLD_NOLOAD=0)
+
+    # vitaGL is an ES 2.0 implementation and its GLSL translator only understands the legacy dialect, so ImGui must
+    # take its "#version 100" ES2 shader path instead of the desktop "#version 130" default.
+    target_compile_definitions(imgui_backends PRIVATE IMGUI_IMPL_OPENGL_ES2=1)
 endif()
 
 set(IMGUI_SOURCES
