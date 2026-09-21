@@ -28,7 +28,7 @@
 	url = https://github.com/mandreyel/mio
 [submodule "thirdparty/spdlog"]
 	path = thirdparty/spdlog
-	url = https://github.com/gabime/spdlog.git
+	url = https://github.com/gtrias/spdlog.git
 [submodule "thirdparty/cpplint"]
 	path = thirdparty/cpplint
 	url = https://github.com/cpplint/cpplint.git
@@ -65,7 +65,7 @@
 	url = https://github.com/bnoazx005/tcpp.git
 [submodule "thirdparty/ztd_text"]
 	path = thirdparty/ztd_text
-	url = https://github.com/captainurist/ztd_text.git
+	url = https://github.com/gtrias/ztd_text.git
 [submodule "thirdparty/cpptrace"]
 	path = thirdparty/cpptrace
 	url = https://github.com/jeremy-rifkin/cpptrace.git
