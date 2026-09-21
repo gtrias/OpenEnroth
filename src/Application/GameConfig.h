@@ -357,31 +357,96 @@ class GameConfig : public Config {
         Key Attack = {this, INPUT_ACTION_ATTACK, "attack", PlatformKey::KEY_GAMEPAD_L1, "Attack key."};
         Key AutoNotes = {this, INPUT_ACTION_OPEN_AUTONOTES, "auto_notes", PlatformKey::KEY_GAMEPAD_UP, "Open autonotes key."};
         Key Backward = {this, INPUT_ACTION_MOVE_BACKWARDS, "backward", PlatformKey::KEY_GAMEPAD_LEFTSTICK_DOWN, "Walk backwards key."};
-        Key Cast = {this, INPUT_ACTION_OPEN_SPELLBOOK, "cast", PlatformKey::KEY_GAMEPAD_DOWN, "Cast a spell from spellbook key."};
+        Key Cast = {this, INPUT_ACTION_OPEN_SPELLBOOK, "cast",
+#ifdef __vita__
+            PlatformKey::KEY_GAMEPAD_B, // Circle.
+#else
+            PlatformKey::KEY_GAMEPAD_DOWN,
+#endif
+            "Cast a spell from spellbook key."};
         Key CastReady = {this, INPUT_ACTION_QUICK_CAST, "cast_ready", PlatformKey::KEY_GAMEPAD_R1, "Cast a quick spell key."};
         Key CenterView = {this, INPUT_ACTION_CENTER_VIEW, "center_view", PlatformKey::KEY_NONE, "Center view key."};
         Key CharCycle = {this, INPUT_ACTION_NEXT_CHAR, "char_cycle", PlatformKey::KEY_NONE, "Switch between characters key."};
-        Key Combat = {this, INPUT_ACTION_TOGGLE_TURN_BASED, "combat", PlatformKey::KEY_GAMEPAD_START, "Switch between realtime and turn-based modes key."};
-        Key EventTrigger = {this, INPUT_ACTION_INTERACT, "event_trigger", PlatformKey::KEY_GAMEPAD_A, "Interaction key."};
-        Key FlyDown = {this, INPUT_ACTION_FLY_DOWN, "fly_down", PlatformKey::KEY_GAMEPAD_L2, "Fly down key."};
-        Key FlyUp = {this, INPUT_ACTION_FLY_UP, "fly_up", PlatformKey::KEY_GAMEPAD_R2, "Fly up key."};
+        Key Combat = {this, INPUT_ACTION_TOGGLE_TURN_BASED, "combat",
+#ifdef __vita__
+            PlatformKey::KEY_GAMEPAD_A, // Cross, the natural "confirm/act" button.
+#else
+            PlatformKey::KEY_GAMEPAD_START,
+#endif
+            "Switch between realtime and turn-based modes key."};
+        Key EventTrigger = {this, INPUT_ACTION_INTERACT, "event_trigger",
+#ifdef __vita__
+            PlatformKey::KEY_GAMEPAD_X, // Square - cross is taken by the combat toggle.
+#else
+            PlatformKey::KEY_GAMEPAD_A,
+#endif
+            "Interaction key."};
+        Key FlyDown = {this, INPUT_ACTION_FLY_DOWN, "fly_down",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // L2 clicks the virtual cursor.
+#else
+            PlatformKey::KEY_GAMEPAD_L2,
+#endif
+            "Fly down key."};
+        Key FlyUp = {this, INPUT_ACTION_FLY_UP, "fly_up",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // R2 clicks the virtual cursor.
+#else
+            PlatformKey::KEY_GAMEPAD_R2,
+#endif
+            "Fly up key."};
         Key Forward = {this, INPUT_ACTION_MOVE_FORWARD, "forward", PlatformKey::KEY_GAMEPAD_LEFTSTICK_UP, "Move forward key."};
-        Key Jump = {this, INPUT_ACTION_JUMP, "jump", PlatformKey::KEY_GAMEPAD_Y, "Jump key."};
+        Key Jump = {this, INPUT_ACTION_JUMP, "jump",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // Triangle is the inventory toggle instead.
+#else
+            PlatformKey::KEY_GAMEPAD_Y,
+#endif
+            "Jump key."};
         Key Land = {this, INPUT_ACTION_FLY_LAND, "land", PlatformKey::KEY_GAMEPAD_R3, "Land key."};
-        Key Left = {this, INPUT_ACTION_TURN_LEFT, "left", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_LEFT, "Turn left key."};
-        Key LookDown = {this, INPUT_ACTION_LOOK_DOWN, "look_down", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN, "Look down key."};
-        Key LookUp = {this, INPUT_ACTION_LOOK_UP, "look_up", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_UP, "Look up key."};
+        Key Left = {this, INPUT_ACTION_TURN_LEFT, "left",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
+#else
+            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_LEFT,
+#endif
+            "Turn left key."};
+        Key LookDown = {this, INPUT_ACTION_LOOK_DOWN, "look_down",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
+#else
+            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN,
+#endif
+            "Look down key."};
+        Key LookUp = {this, INPUT_ACTION_LOOK_UP, "look_up",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
+#else
+            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_UP,
+#endif
+            "Look up key."};
         Key MapBook = {this, INPUT_ACTION_OPEN_MAP, "map_book", PlatformKey::KEY_GAMEPAD_LEFT, "Open map key."};
         Key Pass = {this, INPUT_ACTION_PASS, "pass", PlatformKey::KEY_GAMEPAD_GUIDE, "Pass turn key."};
         Key Quest = {this, INPUT_ACTION_OPEN_QUESTS, "quest", PlatformKey::KEY_GAMEPAD_RIGHT, "Open quest book key."};
         Key QuickReference = {this, INPUT_ACTION_OPEN_QUICK_REFERENCE, "quick_reference", PlatformKey::KEY_NONE, "Open quick reference menu key."};
         Key Rest = {this, INPUT_ACTION_REST, "rest", PlatformKey::KEY_GAMEPAD_BACK, "Rest key."};
-        Key Right = {this, INPUT_ACTION_TURN_RIGHT, "right", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT, "Turn right key."};
+        Key Right = {this, INPUT_ACTION_TURN_RIGHT, "right",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
+#else
+            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT,
+#endif
+            "Turn right key."};
         Key StepLeft = {this, INPUT_ACTION_STRAFE_LEFT, "step_left", PlatformKey::KEY_GAMEPAD_LEFTSTICK_LEFT, "Strafe left key."};
         Key StepRight = {this, INPUT_ACTION_STRAFE_RIGHT, "step_right", PlatformKey::KEY_GAMEPAD_LEFTSTICK_RIGHT, "Strafe right key."};
         Key TimeCalendar = {this, INPUT_ACTION_OPEN_CALENDAR, "time_calendar", PlatformKey::KEY_NONE, "Open calendar key."};
-        Key Yell = {this, INPUT_ACTION_YELL, "yell", PlatformKey::KEY_GAMEPAD_X, "Yell key."};
-        Key ZoomIn = {this, INPUT_ACTION_ZOOM_IN, "zoom_in", PlatformKey::KEY_NONE, "Zoom in automap key."};
+        Key Yell = {this, INPUT_ACTION_YELL, "yell",
+#ifdef __vita__
+            PlatformKey::KEY_NONE, // Square is the interaction key instead.
+#else
+            PlatformKey::KEY_GAMEPAD_X,
+#endif
+            "Yell key."};
         Key ZoomOut = {this, INPUT_ACTION_ZOOM_OUT, "zoom_out", PlatformKey::KEY_NONE, "Zoom out automap key."};
         Key QuickSave = {this, INPUT_ACTION_QUICK_SAVE, "quick_save", PlatformKey::KEY_NONE, "Quick save key."};
         Key QuickLoad = {this, INPUT_ACTION_QUICK_LOAD, "quick_load", PlatformKey::KEY_NONE, "Quick load key."};

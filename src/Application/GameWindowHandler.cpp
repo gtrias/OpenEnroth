@@ -65,6 +65,19 @@ static char PlatformKeyToChar(PlatformKey key, PlatformModifiers mods) {
 
     return 0;
 }
+#ifdef __vita__
+namespace {
+// The Vita has no mouse. The right stick drives a virtual cursor in window coordinates (the native 960x544 panel -
+// the mouse event handlers map those down to the 640x480 render space themselves), and the shoulder triggers click
+// it. This lives in the window handler instead of the SDL layer so that it stays backend-agnostic.
+Pointi g_vitaCursor(480, 272);
+bool g_vitaL2Held = false;
+bool g_vitaR2Held = false;
+
+constexpr float VITA_CURSOR_DEADZONE = 0.25f;
+constexpr float VITA_CURSOR_SPEED = 12.0f; // Pixels per axis event, ~60 events per second.
+} // namespace
+#endif
 
 
 GameWindowHandler::GameWindowHandler() : PlatformEventFilter(EVENTS_ALL) {
@@ -587,6 +600,69 @@ bool GameWindowHandler::gamepadKeyReleaseEvent(const PlatformGamepadKeyEvent *ev
 bool GameWindowHandler::gamepadAxisEvent(const PlatformGamepadAxisEvent *event) {
     PlatformKey key = event->axis;
     float value = event->value;
+
+#ifdef __vita__
+    // Shoulder triggers click the virtual cursor. A full click is press + release in one go: the engine's
+    // press handlers run the whole interaction, and held buttons don't mean anything without a real mouse.
+    if (key == PlatformKey::KEY_GAMEPAD_L2) {
+        if (value >= 0.5f && !g_vitaL2Held) {
+            g_vitaL2Held = true;
+            PlatformMouseEvent e;
+            e.type = EVENT_MOUSE_BUTTON_PRESS;
+            e.button = BUTTON_LEFT;
+            e.pos = g_vitaCursor;
+            mousePressEvent(&e);
+        } else if (value < 0.5f && g_vitaL2Held) {
+            g_vitaL2Held = false;
+            PlatformMouseEvent e;
+            e.type = EVENT_MOUSE_BUTTON_RELEASE;
+            e.button = BUTTON_LEFT;
+            e.pos = g_vitaCursor;
+            mouseReleaseEvent(&e);
+        }
+        return false;
+    }
+    if (key == PlatformKey::KEY_GAMEPAD_R2) {
+        if (value >= 0.5f && !g_vitaR2Held) {
+            g_vitaR2Held = true;
+            PlatformMouseEvent e;
+            e.type = EVENT_MOUSE_BUTTON_PRESS;
+            e.button = BUTTON_RIGHT;
+            e.pos = g_vitaCursor;
+            mousePressEvent(&e);
+        } else if (value < 0.5f && g_vitaR2Held) {
+            g_vitaR2Held = false;
+            PlatformMouseEvent e;
+            e.type = EVENT_MOUSE_BUTTON_RELEASE;
+            e.button = BUTTON_RIGHT;
+            e.pos = g_vitaCursor;
+            mouseReleaseEvent(&e);
+        }
+        return false;
+    }
+
+    // Right stick moves the virtual cursor instead of generating key events.
+    float dx = 0.0f, dy = 0.0f;
+    if (key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT || key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN) {
+        dx = key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT ? value : 0.0f;
+        dy = key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN ? value : 0.0f;
+        if (std::abs(dx) < VITA_CURSOR_DEADZONE) dx = 0.0f;
+        if (std::abs(dy) < VITA_CURSOR_DEADZONE) dy = 0.0f;
+
+        if (dx != 0.0f || dy != 0.0f) {
+            Pointi oldPos = g_vitaCursor;
+            g_vitaCursor.x = std::clamp<int>(g_vitaCursor.x + (int)std::round(dx * VITA_CURSOR_SPEED), 0, 959);
+            g_vitaCursor.y = std::clamp<int>(g_vitaCursor.y + (int)std::round(dy * VITA_CURSOR_SPEED), 0, 543);
+
+            PlatformMouseEvent e;
+            e.type = EVENT_MOUSE_MOVE;
+            e.pos = g_vitaCursor;
+            e.rel = g_vitaCursor - oldPos;
+            mouseMoveEvent(&e);
+        }
+        return false;
+    }
+#endif
 
     // TODO(captainurist): this is temporary, we need separate axis enum and proper axis handling
     if (value < 0) {
