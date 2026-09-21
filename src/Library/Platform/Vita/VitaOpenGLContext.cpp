@@ -3,12 +3,30 @@
 #include <cstring>
 
 #include <psp2/kernel/sysmem.h>
+#include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
 
 #include <vitaGL.h>
 
 #include "Library/Logger/Logger.h"
 
 namespace {
+// The Vita's SDL backend doesn't surface system suspend/resume events, and neither does vitaGL - an app that keeps
+// rendering into the display queue while the system is going to sleep crashes on wake (that's the crash this port
+// showed after suspending the console). Every frame passes through swapBuffers, so this is the natural place to
+// quiesce: when the power manager asks for a suspension, park the main thread until the system is back.
+void waitForResumeIfSuspended() {
+    if (!scePowerIsSuspendRequired())
+        return;
+
+    MM_INFO("System suspension requested, halting rendering until resume.");
+    do {
+        sceKernelDelayThread(100 * 1000); // Don't busy-spin against the power manager.
+    } while (scePowerIsSuspendRequired());
+    MM_INFO("System resumed, continuing rendering.");
+}
+
+
 // vitaGL doesn't export every entry point that glad-based code calls, and a call through the resulting null pointer
 // takes the whole process down. ImGui calls glDetachShader when it tears its device objects down; detaching a shader
 // that's about to be deleted anyway is optional, so a no-op is the right stand-in.
@@ -68,6 +86,7 @@ void *VitaOpenGLContext::nativeHandle() {
 }
 
 void VitaOpenGLContext::swapBuffers() {
+    waitForResumeIfSuspended();
     vglSwapBuffers(GL_FALSE);
 }
 

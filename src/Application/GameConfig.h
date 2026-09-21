@@ -502,8 +502,8 @@ class GameConfig : public Config {
 
         Int RenderFilter = {this, "render_filter",
 #ifdef __vita__
-            0, // vitaGL's framebuffer-object path fails on the attach (INVALID_ENUM every frame), which garbles the
-               // image - render directly at window resolution until that's investigated.
+            1, // Render internally at 640x480 (the game's native coordinate space) and letterbox-scale to the
+               // 960x544 display. Linear filtering: 1.5x upscale would shimmer with nearest.
 #else
             2,
 #endif

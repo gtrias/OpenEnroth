@@ -25,15 +25,18 @@ void main() {
 #else
     vec4 fragcol = texture(texture0, texuv);
 #endif
-    int index = int(fragcol.r * 255.0);
+    int index = int(fragcol.r * 255.0 + 0.5);
 #ifdef OE_GLSL_LEGACY
-    vec4 newcol = vec4(texture2D(paltex2D, (vec2(float(index), float(int(paletteid))) + 0.5) / paletteSize));
+    // Legacy paletteid is an interpolated float varying, unlike the desktop shader's flat int - f32 rounding can
+    // land it slightly below the integer, and int() truncates to the wrong palette row.
+    int palrow = int(paletteid + 0.5);
+    vec4 newcol = vec4(texture2D(paltex2D, (vec2(float(index), float(palrow)) + 0.5) / paletteSize));
 #else
     vec4 newcol = vec4(texelFetch(paltex2D, ivec2(index, paletteid), 0));
 #endif
 
 #ifdef OE_GLSL_LEGACY
-    if (int(paletteid) > 0)
+    if (palrow > 0)
 #else
     if (paletteid > 0)
 #endif
