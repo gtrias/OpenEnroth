@@ -10,6 +10,10 @@
 #include "SdlEnumTranslation.h"
 #include "SdlOpenGLContext.h"
 
+#ifdef __vita__
+#include "Library/Platform/Vita/VitaOpenGLContext.h"
+#endif
+
 SdlWindow::SdlWindow(SdlPlatformSharedState *state, SDL_Window *window, uint32_t id): _state(state), _window(window), _id(id) {
     assert(state);
     assert(window);
@@ -187,6 +191,16 @@ void SdlWindow::warpMouse(Pointi position) {
 }
 
 std::unique_ptr<PlatformOpenGLContext> SdlWindow::createOpenGLContext(const PlatformOpenGLOptions &options) {
+#ifdef __vita__
+    // SDL's Vita video driver has no OpenGL support, see VitaOpenGLContext.
+    (void) options;
+
+    Sizei size = this->size();
+    if (size.w <= 0 || size.h <= 0)
+        return nullptr;
+
+    return std::make_unique<VitaOpenGLContext>(size.w, size.h);
+#else
     if (options.versionMajor != -1)
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, options.versionMajor);
 
@@ -218,4 +232,5 @@ std::unique_ptr<PlatformOpenGLContext> SdlWindow::createOpenGLContext(const Plat
         _state->logSdlError("SDL_GL_SetSwapInterval"); // Not a critical error, we still return context in this case.
 
     return std::make_unique<SdlOpenGLContext>(_state, _window, ctx);
+#endif
 }

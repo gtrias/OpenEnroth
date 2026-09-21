@@ -33,9 +33,12 @@
 
 #include "OpenEnrothOptions.h"
 
+#include <pthread.h>
+
 #ifdef __vita__
-// vita-elf-create appends its SCE relocation table after segment 0; pad the gap to the next segment.
-__asm__(".section .vita_sce_pad, \"ax\", %progbits\n.space 8192\n.text\n");
+// vita-elf-create appends its SCE relocation table right after segment 0, so padding has to cover the gap to the next
+// segment - it fails with "cannot allocate N bytes for SCE data" once the port outgrows the padding.
+__asm__(".section .vita_sce_pad, \"ax\", %progbits\n.space 32768\n.text\n");
 #endif
 
 void migrateTrace(OpenEnrothOptions::Migration migration, EventTrace *trace) {
@@ -158,6 +161,16 @@ int openEnrothMain(int argc, char **argv) {
         return 1;
     }
 }
+
+#ifdef __vita__
+// The Vita's default main-thread stack is small, and the engine's deepest paths (event scripts, level loading)
+// overflow it - a deterministic 64 KiB stack write hit the guard page at the same address on every run. vita-elf-create
+// picks this symbol up and bakes the size into the eboot.
+#include <psp2/types.h>
+
+extern "C" __attribute__((used))
+const SceSize sceUserMainThreadStackSize = 8 * 1024 * 1024;
+#endif
 
 int platformMain(int argc, char **argv) {
     int result = openEnrothMain(argc, argv);

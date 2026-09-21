@@ -7,6 +7,9 @@
 #include "Library/FileSystem/Directory/DirectoryFileSystem.h"
 #include "Library/FileSystem/Embedded/EmbeddedFileSystem.h"
 #include "Library/FileSystem/Lowercase/LowercaseFileSystem.h"
+#ifdef __vita__
+#include "Library/FileSystem/Vita/VitaFileSystem.h"
+#endif
 #include "Library/FileSystem/Merging/MergingFileSystem.h"
 #include "Library/FileSystem/Memory/MemoryFileSystem.h"
 
@@ -27,7 +30,11 @@ void FileSystemStarter::initUserFs(bool ramFs, const NativePath &path) {
     if (ramFs) {
         _userFs = std::make_unique<MemoryFileSystem>("ramfs");
     } else {
+#ifdef __vita__
+        _userFs = std::make_unique<VitaFileSystem>(path.toWtf8());
+#else
         _userFs = std::make_unique<DirectoryFileSystem>(path);
+#endif
     }
 
     ufs = _userFs.get();
@@ -37,7 +44,11 @@ void FileSystemStarter::initDataFs(const NativePath &path, bool pathOverridesBui
     assert(dfs == nullptr);
 
     _dataEmbeddedFs = std::make_unique<EmbeddedFileSystem>(cmrc::openenroth::get_filesystem(), "embedded");
+#ifdef __vita__
+    _dataDirFs = std::make_unique<VitaFileSystem>(path.toWtf8());
+#else
     _dataDirFs = std::make_unique<DirectoryFileSystem>(path);
+#endif
     _dataDirLowercaseFs = std::make_unique<LowercaseFileSystem>(_dataDirFs.get());
 
     std::vector<const FileSystem *> baseFileSystems = {_dataDirLowercaseFs.get(), _dataEmbeddedFs.get()};

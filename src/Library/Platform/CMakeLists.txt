@@ -6,3 +6,7 @@ add_subdirectory(Interface)
 add_subdirectory(Null)
 add_subdirectory(Proxy)
 add_subdirectory(Sdl)
+
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    add_subdirectory(Vita)
+endif()

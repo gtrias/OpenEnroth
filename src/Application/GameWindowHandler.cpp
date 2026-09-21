@@ -4,7 +4,19 @@
 #include <vector>
 #include <tuple>
 #include <string>
+#include <cstring>
 
+
+#ifdef __vita__
+#include <psp2/io/fcntl.h>
+static void writeWindowProbe(const char *stage) {
+    SceUID file = sceIoOpen("ux0:/data/OpenEnroth/vita-fs-probe.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (file >= 0) {
+        (void) sceIoWrite(file, stage, strlen(stage));
+        (void) sceIoClose(file);
+    }
+}
+#endif
 #include "Arcomage/Arcomage.h"
 
 #include "GUI/UI/UIPopup.h"
@@ -116,7 +128,10 @@ std::tuple<int, Pointi, Sizei> GameWindowHandler::GetWindowRelativePosition(Poin
 
 void GameWindowHandler::UpdateWindowFromConfig(const GameConfig *config) {
     assert(config);
-
+#ifdef __vita__
+    // SDL's Vita video backend exposes one fixed native surface. Runtime desktop
+    // window operations, including title and fullscreen changes, crash this build.
+#else
     Sizei size = {config->window.Width.value(), config->window.Height.value()};
     Pointi pos = std::get<1>(GetWindowConfigPosition(config));
     PlatformWindowMode mode = config->window.Mode.value();
@@ -128,6 +143,7 @@ void GameWindowHandler::UpdateWindowFromConfig(const GameConfig *config) {
     window->setWindowMode(mode);
     window->setResizable(config->window.Resizable.value());
     window->setVisible(true);
+#endif
 }
 
 void GameWindowHandler::UpdateConfigFromWindow(GameConfig *config) {

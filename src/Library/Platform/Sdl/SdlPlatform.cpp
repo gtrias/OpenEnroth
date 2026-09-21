@@ -5,6 +5,19 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <cstring>
+
+#ifdef __vita__
+#include <psp2/io/fcntl.h>
+
+static void writeSdlWindowError(const char *error) {
+    SceUID file = sceIoOpen("ux0:/data/OpenEnroth/sdl-window-error.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (file >= 0) {
+        (void) sceIoWrite(file, error, strlen(error));
+        (void) sceIoClose(file);
+    }
+}
+#endif
 
 #include "Library/Logger/Logger.h"
 
@@ -53,8 +66,17 @@ std::unique_ptr<PlatformWindow> SdlPlatform::createWindow() {
         _state->logSdlError("SDL_SetHintWithPriority");
 #endif
 
+#ifdef __vita__
+    // No SDL_WINDOW_OPENGL - SDL's Vita video driver doesn't provide OpenGL (see VitaOpenGLContext), and asking
+    // for it makes SDL_CreateWindow fail outright. Vita is a fullscreen-only target.
+    SDL_Window *window = SDL_CreateWindow("", 960, 544, SDL_WINDOW_FULLSCREEN);
+#else
     SDL_Window *window = SDL_CreateWindow("", 100, 100, SDL_WINDOW_HIDDEN | SDL_WINDOW_OPENGL);
+#endif
     if (!window) {
+#ifdef __vita__
+        writeSdlWindowError(SDL_GetError());
+#endif
         _state->logSdlError("SDL_CreateWindow");
         return nullptr;
     }

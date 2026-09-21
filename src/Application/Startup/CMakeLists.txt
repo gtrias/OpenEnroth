@@ -35,3 +35,7 @@ target_link_libraries(application_startup
         scripting
         utility)
 
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    target_link_libraries(application_startup PUBLIC library_filesystem_vita)
+endif()
+

@@ -8,6 +8,9 @@
 #include "Library/Environment/Interface/Environment.h"
 #include "Library/FileSystem/Directory/DirectoryFileSystem.h"
 #include "Library/FileSystem/Lowercase/LowercaseFileSystem.h"
+#ifdef __vita__
+#include "Library/FileSystem/Vita/VitaFileSystem.h"
+#endif
 
 static const std::vector<std::string_view> globalValidateList = {
     {"anims/magic7.vid"},
@@ -101,7 +104,7 @@ static std::vector<NativePath> resolvePaths(Environment *environment, const Path
 
 #ifdef __vita__
     // ...or ux0:data on Vita (app0: is read-only and wiped on app update).
-    result.push_back(NativePath::fromWtf8("ux0:data/OpenEnroth"));
+    result.push_back(NativePath::fromWtf8("ux0:/data/OpenEnroth"));
 #endif
 
 #ifdef __APPLE__
@@ -127,7 +130,11 @@ std::vector<NativePath> resolveMm8Paths(Environment *environment) {
 }
 
 bool validateMm7Path(const NativePath &dataPath, std::string *missingFile) {
+#ifdef __vita__
+    VitaFileSystem dirFs(dataPath.toWtf8());
+#else
     DirectoryFileSystem dirFs(dataPath);
+#endif
     LowercaseFileSystem lowerFs(&dirFs);
 
     for (std::string_view entry : globalValidateList) {
@@ -148,6 +155,9 @@ NativePath resolveMm7UserPath(Environment *environment) {
     return NativePath::fromWtf8(fmt::format("{}/OpenEnroth", savedGames));
 #elif __ANDROID__
     return NativePath::fromWtf8(fmt::format("{}/.openenroth", environment->path(PATH_ANDROID_STORAGE_INTERNAL)));
+#elif defined(__vita__)
+    // No HOME on vita; keep config & logs next to game data so they're reachable over FTP.
+    return NativePath::fromWtf8("ux0:/data/OpenEnroth");
 #else // Mac & linux
     return NativePath::fromWtf8(fmt::format("{}/.openenroth", environment->path(PATH_HOME)));
 #endif

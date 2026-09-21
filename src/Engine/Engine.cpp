@@ -621,14 +621,33 @@ void MM7_LoadLods() {
     engine->resources()->open();
 
     pIcons_LOD = new LodTextureCache;
+#ifdef __vita__
+    // See LodReader::open(FileSystem *): the Vita can't hold the game's LODs in RAM at once.
+    MM_INFO("Opening icons.lod.");
+    pIcons_LOD->open(dfs, "data/icons.lod");
+#else
     pIcons_LOD->open(dfs->read("data/icons.lod"));
+#endif
 
     pBitmaps_LOD = new LodTextureCache;
+#ifdef __vita__
+    MM_INFO("Opening bitmaps.lod.");
+    pBitmaps_LOD->open(dfs, "data/bitmaps.lod");
+#else
     pBitmaps_LOD->open(dfs->read("data/bitmaps.lod"));
+#endif
 
     pSprites_LOD = new LodSpriteCache;
+#ifdef __vita__
+    MM_INFO("Opening sprites.lod.");
+    pSprites_LOD->open(dfs, "data/sprites.lod");
+#else
     pSprites_LOD->open(dfs->read("data/sprites.lod"));
+#endif
 
+#ifdef __vita__
+    MM_INFO("Opening palette data.");
+#endif
     // TODO(captainurist):
     // on error in `open` we had this:
     // Error(localization->str(LSTR_MIGHT_AND_MAGIC_VII_IS_HAVING_TROUBLE), localization->str(LSTR_REINSTALL_NECESSARY));
@@ -660,8 +679,16 @@ void Engine::MM7_Initialize() {
 
     MM7_LoadLods();
 
+#ifdef __vita__
+    MM_INFO("Game LODs loaded.");
+#endif
+
     localization = new Localization();
     localization->initialize();
+
+#ifdef __vita__
+    MM_INFO("Localization initialized.");
+#endif
 
     pSpriteFrameTable = new SpriteFrameTable;
     deserialize(engine->resources()->eventsData("dsft.bin"), pSpriteFrameTable);
@@ -693,15 +720,51 @@ void Engine::MM7_Initialize() {
     pSoundList = new SoundList;
     deserialize(engine->resources()->eventsData("dsounds.bin"), pSoundList);
 
-    if (!config->debug.NoSound.value())
+#ifdef __vita__
+    MM_INFO("Game tables loaded.");
+#endif
+
+#ifdef __vita__
+    MM_INFO("Initializing audio.");
+#endif
+    if (!config->debug.NoSound.value()) {
+#ifdef __vita__
+        // Sound is optional for rendering a frame, so don't let a failure here take the game down - OpenAL on the
+        // Vita is the oldest dependency of this port.
+        try {
+            pAudioPlayer->Initialize();
+        } catch (const std::exception &e) {
+            MM_ERROR("Couldn't initialize audio, continuing without sound: {}", e.what());
+        }
+#else
         pAudioPlayer->Initialize();
+#endif
+    }
+
+#ifdef __vita__
+    MM_INFO("Audio initialized.");
+#endif
 
     pMediaPlayer = new MPlayer();
+#ifdef __vita__
+    // Movie playback is optional, so a failure to open the movie lists shouldn't take the game down - and on the Vita
+    // these are the huge .vid files, see VidReader::open(FileSystem *).
+    try {
+        pMediaPlayer->Initialize();
+    } catch (const std::exception &e) {
+        MM_ERROR("Couldn't initialize the media player, movies will be unavailable: {}", e.what());
+    }
+#else
     pMediaPlayer->Initialize();
+#endif
 
     pTileGenerator = new TileGenerator();
     if (engine->config->graphics.GenerateTiles.value())
         pTileGenerator->fillTable();
+
+#ifdef __vita__
+    MM_INFO("Engine data initialized.");
+#endif
 
     dword_6BE364_game_settings_1 |= GAME_SETTINGS_4000;
 }

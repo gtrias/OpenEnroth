@@ -35,6 +35,11 @@ add_library(library_platform_sdl STATIC ${PLATFORM_SDL_SOURCES} ${PLATFORM_SDL_H
 target_check_style(library_platform_sdl)
 target_link_libraries(library_platform_sdl PUBLIC utility library_logger PRIVATE SDL3::SDL3OE)
 
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    # SdlWindow hands out a vitaGL-backed context on Vita.
+    target_link_libraries(library_platform_sdl PUBLIC library_platform_vita)
+endif()
+
 # Currently we have only one implementation library defining Platform::createStandardPlatform function, but we used
 # to have two. So we're keeping the old mechanism with an additional library_platform_implementation library.
 add_library(library_platform_implementation INTERFACE)

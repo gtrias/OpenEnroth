@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.27 FATAL_ERROR)
+
+add_library(library_filesystem_vita STATIC VitaFileSystem.cpp VitaFileSystem.h)
+target_link_libraries(library_filesystem_vita PUBLIC library_filesystem_interface utility SceIofilemgr_stub)
+target_check_style(library_filesystem_vita)
