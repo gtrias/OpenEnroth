@@ -2,6 +2,7 @@
 
 #include "OpenGLVertexBuffer.h"
 
+#include <climits>
 #include <cmath>
 #include <algorithm>
 #include <memory>
@@ -17,6 +18,10 @@
 
 #include <imgui/backends/imgui_impl_opengl3.h> // NOLINT: not a C system header.
 #include <imgui/backends/imgui_impl_sdl3.h> // NOLINT: not a C system header.
+
+#ifdef __vita__
+#include "Library/Platform/Vita/VitaMemory.h"
+#endif
 
 #include "Engine/Engine.h"
 #include "Engine/Resources/EngineFileSystem.h"
@@ -74,6 +79,180 @@ RenderVertexSoft VertexRenderList[50];
 static GLuint framebuffer = 0;
 static GLuint framebufferTextures[2] = {0, 0};
 static bool OpenGLES = false;
+// Whether the GL implementation has GL_TEXTURE_2D_ARRAY. Vita's vitaGL doesn't - it's an ES2-level implementation -
+// so on such platforms texture arrays are emulated with 2D atlases, see uploadTextureArray.
+static bool SupportsTextureArrays = true;
+
+// ES2 makes depth textures optional and has no GL_CLAMP_TO_BORDER - vitaGL has neither, so both are probed at
+// renderer init. When depth textures aren't available the framebuffer uses a depth renderbuffer instead.
+static bool SupportsDepthTextures = true;
+static bool SupportsClampToBorder = true;
+// ES2 only accepts unsized internal formats (GL_RGBA), unlike desktop GL and ES3.
+static bool SupportsSizedInternalFormats = true;
+static GLuint framebufferDepthRenderbuffer = 0;
+
+// Texture arrays are emulated with a 2D atlas that stacks the layers vertically - that's what platforms without
+// GL_TEXTURE_2D_ARRAY (Vita) get. Bind these instead of calling the GL_TEXTURE_2D_ARRAY entry points directly.
+static GLenum textureArrayTarget() {
+    return SupportsTextureArrays ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
+}
+
+// Number of layers that fit into an emulated atlas: layers are stacked vertically, so this is bounded by
+// GL_MAX_TEXTURE_SIZE.
+static int emulatedArrayLayerCapacity(int height) {
+    if (SupportsTextureArrays)
+        return INT_MAX; // Not emulated.
+
+    GLint maxTextureSize = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+    return maxTextureSize / (height > 0 ? height : 1);
+}
+
+// Layers an emulated atlas actually holds. The allocation, the layer uploads and the shader's layer scale all have to
+// agree on this number, so they all go through here.
+static int emulatedArrayLayerCount(int height, int requestedLayers) {
+    if (SupportsTextureArrays)
+        return requestedLayers;
+
+    int capacity = emulatedArrayLayerCapacity(height);
+    if (requestedLayers > capacity) {
+        MM_CRITICAL("Texture array of {} layers does not fit into an emulated {} px tall atlas (capacity {} layers), "
+                    "textures past the limit will be missing.", requestedLayers, height, capacity);
+        return capacity;
+    }
+    return requestedLayers;
+}
+
+static void bindTextureArray(GLuint texture) {
+    glBindTexture(textureArrayTarget(), texture);
+}
+
+// Allocates storage for a texture array of `layers` layers, each `width` x `height` pixels.
+static void allocTextureArray(int width, int height, int layers) {
+    if (SupportsTextureArrays) {
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    } else {
+        layers = emulatedArrayLayerCount(height, layers);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height * layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    }
+}
+
+// Uploads a single `width` x `height` layer into the currently bound texture array.
+static void uploadTextureArrayLayer(int width, int height, int layer, const void *pixels) {
+    if (SupportsTextureArrays) {
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    } else {
+        if (layer >= emulatedArrayLayerCapacity(height))
+            return; // Past the atlas capacity - already reported when the atlas was allocated.
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, layer * height, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    }
+}
+
+static void setTextureArrayParameter(GLenum pname, GLint value) {
+    glTexParameteri(textureArrayTarget(), pname, value);
+}
+
+static void generateTextureArrayMipmaps() {
+    if (SupportsTextureArrays)
+        glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    // Emulated atlases are sampled with GL_LINEAR and have no mipmaps: mip levels would blend neighbouring layers.
+}
+
+// Drops any pending GL errors so that a probe below only reports its own failures.
+static void clearGlErrors() {
+    while (glGetError() != GL_NO_ERROR) {}
+}
+
+// Depth textures are optional in ES2 (they need OES_depth_texture), and GL_CLAMP_TO_BORDER is optional in ES3.2 - so
+// feature-probe both instead of assuming that a GLES renderer means a desktop-class GL.
+static bool probeDepthTextureSupport() {
+    GLint previousTexture = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+
+    GLuint probe = 0;
+    glGenTextures(1, &probe);
+    glBindTexture(GL_TEXTURE_2D, probe);
+    clearGlErrors();
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, 4, 4, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, nullptr);
+    bool supported = glGetError() == GL_NO_ERROR;
+
+    glBindTexture(GL_TEXTURE_2D, previousTexture);
+    glDeleteTextures(1, &probe);
+    return supported;
+}
+
+static bool probeClampToBorderSupport() {
+    GLint previousTexture = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+
+    GLuint probe = 0;
+    glGenTextures(1, &probe);
+    glBindTexture(GL_TEXTURE_2D, probe);
+    clearGlErrors();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    bool supported = glGetError() == GL_NO_ERROR;
+
+    glBindTexture(GL_TEXTURE_2D, previousTexture);
+    glDeleteTextures(1, &probe);
+    return supported;
+}
+
+// ES2 only accepts unsized internal formats, so GL_RGBA8 would fail there and leave the texture unallocated.
+static bool probeSizedInternalFormatSupport() {
+    GLint previousTexture = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+
+    GLuint probe = 0;
+    glGenTextures(1, &probe);
+    glBindTexture(GL_TEXTURE_2D, probe);
+    clearGlErrors();
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    bool supported = glGetError() == GL_NO_ERROR;
+
+    glBindTexture(GL_TEXTURE_2D, previousTexture);
+    glDeleteTextures(1, &probe);
+    return supported;
+}
+
+// Attaches the depth buffer to the render framebuffer, as either a texture or a renderbuffer.
+static void attachFramebufferDepth() {
+    if (SupportsDepthTextures)
+        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, framebufferTextures[1], 0);
+    else
+        glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, framebufferDepthRenderbuffer);
+}
+
+// Tells an emulated-array shader which tile size and layer count the currently bound atlas has. The shaders use these
+// instead of textureSize() and of the array layer coordinate.
+static void setEmulatedArrayUniforms(const OpenGLShader &shader, int width, int height, int layers) {
+    if (SupportsTextureArrays)
+        return;
+
+    glUniform2f(shader.uniformLocation("textureArraySize"), static_cast<float>(width), static_cast<float>(height));
+    glUniform1f(shader.uniformLocation("textureLayersScale"),
+                1.0f / static_cast<float>(std::max(1, emulatedArrayLayerCount(height, layers))));
+}
+
+// Terrain samples two atlases at once, so it gets one scale per atlas instead of the tile-size uniform.
+static void setEmulatedTerrainArrayUniforms(const OpenGLShader &shader, int waterSize, int waterLayers,
+                                            int tileSize, int tileLayers) {
+    if (SupportsTextureArrays)
+        return;
+
+    glUniform1f(shader.uniformLocation("waterLayersScale"),
+                1.0f / static_cast<float>(std::max(1, emulatedArrayLayerCount(waterSize, waterLayers))));
+    glUniform1f(shader.uniformLocation("tileLayersScale"),
+                1.0f / static_cast<float>(std::max(1, emulatedArrayLayerCount(tileSize, tileLayers))));
+}
+
+// The 2D and billboard shaders look up palette entries with texelFetch(), which the legacy dialect doesn't have - it
+// samples at the texel center instead and needs the palette texture size for that.
+static void setEmulatedPaletteUniform(const OpenGLShader &shader, size_t palettePixelCount) {
+    if (SupportsTextureArrays)
+        return;
+
+    glUniform2f(shader.uniformLocation("paletteSize"), 256.0f, static_cast<float>(palettePixelCount / 256));
+}
 
 namespace detail_gl_error {
 MM_DEFINE_ENUM_SERIALIZATION_FUNCTIONS(GLenum, CASE_SENSITIVE, {
@@ -284,7 +463,7 @@ void OpenGLRenderer::BeginScene3D() {
     if (outputRender != outputPresent) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, framebufferTextures[1], 0);
+        attachFramebufferDepth();
 
         GL_Check_Framebuffer(__FUNCTION__);
     }
@@ -906,9 +1085,13 @@ TextureRenderId OpenGLRenderer::CreateTexture(RgbaImageView image) {
     GLuint glId;
     glGenTextures(1, &glId);
     glBindTexture(GL_TEXTURE_2D, glId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width(), image.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, image.pixels().data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, SupportsSizedInternalFormats ? GL_RGBA8 : GL_RGBA, image.width(), image.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, image.pixels().data());
+    // The 2D shader samples an index texture and looks the color up in a palette, so linear filtering interpolates
+    // palette indices and produces noise whenever the quad isn't drawn 1:1 - which is always the case on Vita, where
+    // the 640x480 UI is drawn onto a 960x544 target. Nearest is also the right look for the game's pixel art.
+    GLint filter = SupportsTextureArrays ? GL_LINEAR : GL_NEAREST;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -1123,10 +1306,10 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
 
             glGenTextures(1, &terraintextures[unit]);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, terraintextures[unit]);
+            bindTextureArray(terraintextures[unit]);
 
             // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, terraintexturesizes[unit], terraintexturesizes[unit], numterraintexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            allocTextureArray(terraintexturesizes[unit], terraintexturesizes[unit], numterraintexloaded[unit]);
 
             // loop through texture map
             std::map<std::string, int>::iterator it = terraintexmap.begin();
@@ -1139,24 +1322,18 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
                     // get texture
                     auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
                     // send texture data to gpu
-                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
-                        0,
-                        0, 0, tlayer,
-                        terraintexturesizes[unit], terraintexturesizes[unit], 1,
-                        GL_RGBA,
-                        GL_UNSIGNED_BYTE,
-                        texture->rgba().pixels().data());
+                    uploadTextureArrayLayer(terraintexturesizes[unit], terraintexturesizes[unit], tlayer, texture->rgba().pixels().data());
                 }
 
                 it++;
             }
 
             // last texture setups
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+            setTextureArrayParameter(GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            setTextureArrayParameter(GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            setTextureArrayParameter(GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            setTextureArrayParameter(GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            generateTextureArrayMipmaps();
         }
     }
 
@@ -1174,7 +1351,7 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
         // skip if textures are empty
         if (numterraintexloaded[unit] > 0) {
             glActiveTexture(GL_TEXTURE0 + unit);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, terraintextures[unit]);
+            bindTextureArray(terraintextures[unit]);
         }
     }
 
@@ -1274,6 +1451,8 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
 
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(terrainshader);
+    setEmulatedTerrainArrayUniforms(terrainshader, terraintexturesizes[0], numterraintexloaded[0],
+                                    terraintexturesizes[1], numterraintexloaded[1]);
 
     // actually draw the whole terrain
     glDrawArrays(GL_TRIANGLES, 0, (127 * 127 * 6));
@@ -1883,6 +2062,7 @@ void OpenGLRenderer::DrawBillboards() {
     uniforms.gamma = gamma;
     uniforms.paltex2D = paltex2D_id;
     uniforms.submit(billbshader);
+    setEmulatedPaletteUniform(billbshader, pPaletteManager->paletteData().size());
 
     size_t offset = 0;
     while (offset < _billboardVertices.size()) {
@@ -1951,7 +2131,7 @@ void OpenGLRenderer::BeginScene2D() {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
 
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, framebufferTextures[1], 0);
+        attachFramebufferDepth();
 
         GL_Check_Framebuffer(__FUNCTION__);
     }
@@ -2400,10 +2580,10 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
 
             glGenTextures(1, &outbuildtextures[unit]);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildtextures[unit]);
+            bindTextureArray(outbuildtextures[unit]);
 
             // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, outbuildtexturewidths[unit], outbuildtextureheights[unit], numoutbuildtexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            allocTextureArray(outbuildtexturewidths[unit], outbuildtextureheights[unit], numoutbuildtexloaded[unit]);
             std::map<std::string, int>::iterator it = outbuildtexmap.begin();
             while (it != outbuildtexmap.end()) {
                 // skip if wtrtyl
@@ -2421,13 +2601,7 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
                     // get texture
                     auto texture = assets->getBitmap(it->first);
 
-                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
-                        0,
-                        0, 0, tlayer,
-                        outbuildtexturewidths[unit], outbuildtextureheights[unit], 1,
-                        GL_RGBA,
-                        GL_UNSIGNED_BYTE,
-                        texture->rgba().pixels().data());
+                    uploadTextureArrayLayer(outbuildtexturewidths[unit], outbuildtextureheights[unit], tlayer, texture->rgba().pixels().data());
                 }
 
                 it++;
@@ -2441,12 +2615,12 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
             //bool border = tile->IsWaterBorderTile();
 
 
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            setTextureArrayParameter(GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            setTextureArrayParameter(GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            setTextureArrayParameter(GL_TEXTURE_WRAP_S, GL_REPEAT);
+            setTextureArrayParameter(GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+            generateTextureArrayMipmaps();
         }
     }
 
@@ -2654,7 +2828,8 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
             }
 
             // draw each set of triangles
-            glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildtextures[unit]);
+            bindTextureArray(outbuildtextures[unit]);
+            setEmulatedArrayUniforms(outbuildshader, outbuildtexturewidths[unit], outbuildtextureheights[unit], numoutbuildtexloaded[unit]);
             _outbuildBuffers[unit].bind();
             glDrawArrays(GL_TRIANGLES, 0, _outbuildVertices[unit].size());
             drawcalls++;
@@ -2888,8 +3063,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
                 glGenTextures(1, &bsptextures[unit]);
                 glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
-                glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, bsptexturewidths[unit], bsptextureheights[unit], bsptexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+                bindTextureArray(bsptextures[unit]);
+                allocTextureArray(bsptexturewidths[unit], bsptextureheights[unit], bsptexloaded[unit]);
 
                 std::map<std::string, int>::iterator it = bsptexmap.begin();
                 while (it != bsptexmap.end()) {
@@ -2901,13 +3076,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
                         // get texture
                         auto texture = assets->getBitmap(it->first);
 
-                        glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
-                            0,
-                            0, 0, tlayer,
-                            bsptexturewidths[unit], bsptextureheights[unit], 1,
-                            GL_RGBA,
-                            GL_UNSIGNED_BYTE,
-                            texture->rgba().pixels().data());
+                        uploadTextureArrayLayer(bsptexturewidths[unit], bsptextureheights[unit], tlayer, texture->rgba().pixels().data());
 
                         //numterraintexloaded[0]++;
                     }
@@ -2918,12 +3087,12 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
 
 
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                setTextureArrayParameter(GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                setTextureArrayParameter(GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                setTextureArrayParameter(GL_TEXTURE_WRAP_S, GL_REPEAT);
+                setTextureArrayParameter(GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-                glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+                generateTextureArrayMipmaps();
             }
         }
 
@@ -3056,7 +3225,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
             // skip if textures are empty
             //if (bsptexloaded[unit] > 0) {
                 glActiveTexture(GL_TEXTURE0 + unit);
-                glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
+                bindTextureArray(bsptextures[unit]);
             //}
         }
 
@@ -3199,7 +3368,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
             }
 
             // draw each set of triangles
-            glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
+            bindTextureArray(bsptextures[unit]);
+            setEmulatedArrayUniforms(bspshader, bsptexturewidths[unit], bsptextureheights[unit], bsptexloaded[unit]);
             _bspBuffers[unit].bind();
             glDrawArrays(GL_TRIANGLES, 0, _bspVertices[unit].size());
             drawcalls++;
@@ -3322,10 +3492,22 @@ void OpenGLRenderer::Initialize() {
     };
 
     int version;
-    if (OpenGLES)
+    if (OpenGLES) {
         version = gladLoadGLES2UserPtr(gladLoadFunc, openGLContext);
-    else
+#ifdef __vita__
+        // gladLoadGLES2 only resolves ES 2.0 core entry points, but the renderer also uses vertex array objects and
+        // framebuffer blits, which are ES 3.0 - their pointers stay null even though vitaGL implements them, and
+        // calling through a null pointer is what killed the first rendered frame. Resolve them by hand.
+        glad_glGenVertexArrays = reinterpret_cast<PFNGLGENVERTEXARRAYSPROC>(openGLContext->getProcAddress("glGenVertexArrays"));
+        glad_glBindVertexArray = reinterpret_cast<PFNGLBINDVERTEXARRAYPROC>(openGLContext->getProcAddress("glBindVertexArray"));
+        glad_glDeleteVertexArrays = reinterpret_cast<PFNGLDELETEVERTEXARRAYSPROC>(openGLContext->getProcAddress("glDeleteVertexArrays"));
+        glad_glBlitFramebuffer = reinterpret_cast<PFNGLBLITFRAMEBUFFERPROC>(openGLContext->getProcAddress("glBlitFramebuffer"));
+        if (!glad_glGenVertexArrays || !glad_glBindVertexArray || !glad_glDeleteVertexArrays || !glad_glBlitFramebuffer)
+            MM_ERROR("vitaGL did not provide the vertex array object or framebuffer blit entry points.");
+#endif
+    } else {
         version = gladLoadGLUserPtr(gladLoadFunc, openGLContext);
+    }
 
     auto glGetStringSafe = [] (int id) {
         // Need this wrapper b/c glGetString can return nullptr, actually happens under OpenGL 1.1 when called for
@@ -3442,27 +3624,49 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
+    SupportsDepthTextures = probeDepthTextureSupport();
+    SupportsClampToBorder = probeClampToBorderSupport();
+    SupportsSizedInternalFormats = probeSizedInternalFormatSupport();
+    if (!SupportsDepthTextures)
+        MM_INFO("GL implementation has no depth textures, using a depth renderbuffer instead.");
+    if (!SupportsClampToBorder)
+        MM_INFO("GL implementation has no GL_CLAMP_TO_BORDER, using GL_CLAMP_TO_EDGE instead.");
+    if (!SupportsSizedInternalFormats)
+        MM_INFO("GL implementation has no sized internal texture formats, using GL_RGBA instead of GL_RGBA8.");
+
     glDeleteFramebuffers(1, &framebuffer);
     glDeleteTextures(2, framebufferTextures);
+    if (framebufferDepthRenderbuffer) {
+        glDeleteRenderbuffers(1, &framebufferDepthRenderbuffer);
+        framebufferDepthRenderbuffer = 0;
+    }
 
     glGenFramebuffers(1, &framebuffer);
     glGenTextures(2, framebufferTextures);
 
+    GLint clampMode = SupportsClampToBorder ? GL_CLAMP_TO_BORDER : GL_CLAMP_TO_EDGE;
     glBindTexture(GL_TEXTURE_2D, framebufferTextures[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, clampMode);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clampMode);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, outputRender.w, outputRender.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    glBindTexture(GL_TEXTURE_2D, framebufferTextures[1]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, outputRender.w, outputRender.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    if (SupportsDepthTextures) {
+        glBindTexture(GL_TEXTURE_2D, framebufferTextures[1]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, outputRender.w, outputRender.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    } else {
+        glGenRenderbuffers(1, &framebufferDepthRenderbuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, framebufferDepthRenderbuffer);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, outputRender.w, outputRender.h);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    }
 
     glViewport(0, 0, outputRender.w, outputRender.h);
     glScissor(0, 0, outputRender.w, outputRender.h);
@@ -3476,13 +3680,20 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &GPU_MAX_TEX_SIZE);
     assert(GPU_MAX_TEX_SIZE >= 512);
     glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &GPU_MAX_TEX_LAYERS);
-    assert(GPU_MAX_TEX_LAYERS >= 256);
+    SupportsTextureArrays = GPU_MAX_TEX_LAYERS >= 256;
     glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &GPU_MAX_TEX_UNITS);
     assert(GPU_MAX_TEX_UNITS >= 16);
-    glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &GPU_MAX_UNIFORM_COMP);
-    assert(GPU_MAX_UNIFORM_COMP >= 1024);
-    glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &GPU_MAX_TOTAL_TEXTURES);
-    assert(GPU_MAX_TOTAL_TEXTURES >= 80);
+
+    if (SupportsTextureArrays) {
+        // The remaining checks describe a desktop-class GL. They're requirements of the texture-array code path, so
+        // they're only meaningful on platforms that actually have texture arrays - Vita has neither.
+        glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_COMPONENTS, &GPU_MAX_UNIFORM_COMP);
+        assert(GPU_MAX_UNIFORM_COMP >= 1024);
+        glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &GPU_MAX_TOTAL_TEXTURES);
+        assert(GPU_MAX_TOTAL_TEXTURES >= 80);
+    } else {
+        MM_INFO("GL implementation has no texture arrays, using 2D atlases instead.");
+    }
 
     if (firstInit) {
         // initiate shaders
@@ -3549,6 +3760,11 @@ bool OpenGLRenderer::ReloadShaders() {
     SubFileSystem shadersFs("shaders", dfs);
 
     for (const auto &[shader, fileName, readableName] : shaders) {
+#ifdef __vita__
+        // Shader compilation is the memory-heaviest startup step (the runtime compiler needs large scratch buffers),
+        // so log the numbers around it - see docs/VITA.md on the port's memory budget.
+        logVitaMemoryUsage(fmt::format("loading {} shader", readableName));
+#endif
         if (!shader->load(shadersFs.read(fmt::format("{}.vert", fileName)),
                           shadersFs.read(fmt::format("{}.frag", fileName)), OpenGLES, &shadersFs)) {
             platform->showMessageBox("CRITICAL ERROR: shader compilation failure",
@@ -3679,6 +3895,7 @@ void OpenGLRenderer::DrawTwodVerts() {
     uniforms.view = viewmat;
     uniforms.paltex2D = paltex2D_id;
     uniforms.submit(twodshader);
+    setEmulatedPaletteUniform(twodshader, pPaletteManager->paletteData().size());
 
     size_t offset = 0;
     while (offset < _twodVertices.size()) {

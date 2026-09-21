@@ -1,3 +1,18 @@
+#ifdef OE_GLSL_LEGACY
+attribute vec3 vaPos;
+attribute vec2 vaTexUV;
+attribute float vaTexLayer;
+attribute vec3 vaNormal;
+attribute float vaAttrib;
+
+varying vec4 vertexColour;
+varying vec2 texuv;
+varying float olayer;
+varying vec3 vsPos;
+varying vec3 vsNorm;
+varying float vsAttrib;
+varying vec4 viewspace;
+#else
 layout (location = 0) in vec3 vaPos;
 layout (location = 1) in vec2 vaTexUV;
 layout (location = 2) in float vaTexLayer;
@@ -11,6 +26,7 @@ out vec3 vsPos;
 out vec3 vsNorm;
 flat out int vsAttrib;
 out vec4 viewspace;
+#endif
 
 uniform mat4 view;
 uniform mat4 projection;
@@ -26,5 +42,9 @@ void main() {
     olayer = vaTexLayer;
     vsPos = vaPos;
     vsNorm = vaNormal;
+#ifdef OE_GLSL_LEGACY
+    vsAttrib = vaAttrib;
+#else
     vsAttrib = int(vaAttrib);
+#endif
 }

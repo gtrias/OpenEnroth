@@ -1,3 +1,15 @@
+#ifdef OE_GLSL_LEGACY
+attribute vec3 vaPos;
+attribute float vaW;
+attribute vec2 vaTexUV;
+attribute float vaTexW;
+attribute float vaScreenSpace;
+attribute vec4 vaCol;
+
+varying vec4 colour;
+varying vec4 texuv;
+varying float screenspace;
+#else
 layout (location = 0) in vec3 vaPos;
 layout (location = 1) in float vaW;
 layout (location = 2) in vec2 vaTexUV;
@@ -8,6 +20,7 @@ layout (location = 5) in vec4 vaCol;
 out vec4 colour;
 out vec4 texuv;
 out float screenspace;
+#endif
 
 uniform mat4 view;
 uniform mat4 projection;
