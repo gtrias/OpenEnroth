@@ -28,7 +28,12 @@ class KeyboardController: public PlatformEventFilter, public ProxyEventLoop {
  private:
     virtual bool keyPressEvent(const PlatformKeyEvent *event) override;
     virtual bool keyReleaseEvent(const PlatformKeyEvent *event) override;
+    virtual bool gamepadKeyPressEvent(const PlatformGamepadKeyEvent *event) override;
+    virtual bool gamepadKeyReleaseEvent(const PlatformGamepadKeyEvent *event) override;
+    virtual bool gamepadAxisEvent(const PlatformGamepadAxisEvent *event) override;
     virtual void processMessages(PlatformEventHandler *eventHandler) override;
+
+    void setKeyDown(PlatformKey key, bool down);
 
  private:
     /** Whether the key is currently held down. */

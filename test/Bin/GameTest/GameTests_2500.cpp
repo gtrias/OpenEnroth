@@ -1,4 +1,6 @@
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "Testing/Game/GameTest.h"
 
@@ -17,6 +19,8 @@
 #include "GUI/UI/UISaveLoad.h"
 
 #include "Io/Mouse.h"
+
+#include "Library/Platform/Interface/PlatformEvents.h"
 
 #include "GameTestCommon.h"
 
@@ -507,4 +511,56 @@ GAME_TEST(Prs, Pr2723) {
     game.tick();
 
     EXPECT_EQ(pParty->activeCharacterIndex(), 1);
+}
+
+GAME_TEST(Prs, GamepadLeftStickMovesParty) {
+    // Pushing the left stick didn't move the party, KeyboardController never tracked gamepad keys or axes.
+    auto posTape = tapes.custom([] { return pParty->pos; });
+    test.loadGameFromTestData("issue_1033.mm7");
+    test.startTaping();
+    game.tick();
+
+    auto moveLeftStickY = [&](float value) {
+        std::unique_ptr<PlatformGamepadAxisEvent> event = std::make_unique<PlatformGamepadAxisEvent>();
+        event->type = EVENT_GAMEPAD_AXIS;
+        event->axis = PlatformKey::KEY_GAMEPAD_LEFTSTICK_DOWN;
+        event->value = value;
+        game.postEvent(std::move(event));
+    };
+
+    moveLeftStickY(-1.0f); // Stick fully up.
+    game.tick(20);
+    moveLeftStickY(0.0f);
+    game.tick(5);
+    Vec3f stoppedPos = posTape.back();
+    game.tick(5);
+
+    EXPECT_GT((stoppedPos - posTape.front()).length(), 100.0f);
+    EXPECT_EQ(posTape.back(), stoppedPos); // Centering the stick stops the party.
+}
+
+GAME_TEST(Prs, GamepadRightStickTurnsParty) {
+    // Pushing the right stick didn't turn the party, KeyboardController never tracked gamepad axes.
+    auto yawTape = tapes.custom([] { return pParty->_viewYaw; });
+    test.loadGameFromTestData("issue_1033.mm7");
+    test.startTaping();
+    game.tick();
+
+    auto moveRightStickX = [&](float value) {
+        std::unique_ptr<PlatformGamepadAxisEvent> event = std::make_unique<PlatformGamepadAxisEvent>();
+        event->type = EVENT_GAMEPAD_AXIS;
+        event->axis = PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT;
+        event->value = value;
+        game.postEvent(std::move(event));
+    };
+
+    moveRightStickX(-1.0f); // Stick fully left.
+    game.tick(10);
+    moveRightStickX(0.0f);
+    game.tick(2);
+    int leftYaw = yawTape.back();
+    game.tick(5);
+
+    EXPECT_NE(leftYaw, yawTape.front());
+    EXPECT_EQ(yawTape.back(), leftYaw); // Centering the stick stops turning.
 }
