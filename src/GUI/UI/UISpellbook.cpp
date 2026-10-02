@@ -304,6 +304,5 @@ void GUIWindow_Spellbook::onCloseSpellBookPage() {
         }
     }
 
-    if (pGUIWindow_CurrentMenu)
-        pGUIWindow_CurrentMenu->DeleteButtons();
+    DeleteButtons();
 }

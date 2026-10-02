@@ -10,6 +10,7 @@
 #include "Engine/SaveLoad.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Vis.h"
+#include "Engine/Graphics/Viewport.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Decoration.h"
 #include "Engine/Resources/EngineFileSystem.h"
@@ -563,4 +564,26 @@ GAME_TEST(Prs, GamepadRightStickTurnsParty) {
 
     EXPECT_NE(leftYaw, yawTape.front());
     EXPECT_EQ(yawTape.back(), leftYaw); // Centering the stick stops turning.
+}
+
+GAME_TEST(Prs, SpellbookAndInventorySameFrame) {
+    // Opening the inventory over the spellbook freed the new character window's buttons. The spellbook's destructor
+    // deleted the buttons of pGUIWindow_CurrentMenu, which already pointed at the replacement window.
+    auto windowTape = tapes.custom([] { return current_character_screen_window; });
+    test.loadGameFromTestData("issue_1033.mm7");
+    game.tick();
+    test.startTaping();
+
+    game.pressKey(PlatformKey::KEY_C); // Cast, opens the spellbook this frame.
+    game.pressKey(PlatformKey::KEY_I); // Inventory, replaces the spellbook next frame.
+    game.tick();
+    game.releaseKey(PlatformKey::KEY_C);
+    game.releaseKey(PlatformKey::KEY_I);
+    game.tick(2);
+    ASSERT_EQ(current_screen_type, SCREEN_CHARACTERS);
+
+    game.pressAndReleaseButton(BUTTON_LEFT, pViewport.topLeft() + Pointi(22, 318)); // Stats tab button.
+    game.tick(2);
+
+    EXPECT_EQ(windowTape.back(), WINDOW_CharacterWindow_Stats);
 }
