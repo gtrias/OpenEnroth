@@ -404,39 +404,15 @@ class GameConfig : public Config {
 #endif
             "Jump key."};
         Key Land = {this, INPUT_ACTION_FLY_LAND, "land", PlatformKey::KEY_GAMEPAD_R3, "Land key."};
-        Key Left = {this, INPUT_ACTION_TURN_LEFT, "left",
-#ifdef __vita__
-            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
-#else
-            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_LEFT,
-#endif
-            "Turn left key."};
-        Key LookDown = {this, INPUT_ACTION_LOOK_DOWN, "look_down",
-#ifdef __vita__
-            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
-#else
-            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN,
-#endif
-            "Look down key."};
-        Key LookUp = {this, INPUT_ACTION_LOOK_UP, "look_up",
-#ifdef __vita__
-            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
-#else
-            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_UP,
-#endif
-            "Look up key."};
+        Key Left = {this, INPUT_ACTION_TURN_LEFT, "left", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_LEFT, "Turn left key."};
+        Key LookDown = {this, INPUT_ACTION_LOOK_DOWN, "look_down", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN, "Look down key."};
+        Key LookUp = {this, INPUT_ACTION_LOOK_UP, "look_up", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_UP, "Look up key."};
         Key MapBook = {this, INPUT_ACTION_OPEN_MAP, "map_book", PlatformKey::KEY_GAMEPAD_LEFT, "Open map key."};
         Key Pass = {this, INPUT_ACTION_PASS, "pass", PlatformKey::KEY_GAMEPAD_GUIDE, "Pass turn key."};
         Key Quest = {this, INPUT_ACTION_OPEN_QUESTS, "quest", PlatformKey::KEY_GAMEPAD_RIGHT, "Open quest book key."};
         Key QuickReference = {this, INPUT_ACTION_OPEN_QUICK_REFERENCE, "quick_reference", PlatformKey::KEY_NONE, "Open quick reference menu key."};
         Key Rest = {this, INPUT_ACTION_REST, "rest", PlatformKey::KEY_GAMEPAD_BACK, "Rest key."};
-        Key Right = {this, INPUT_ACTION_TURN_RIGHT, "right",
-#ifdef __vita__
-            PlatformKey::KEY_NONE, // The right stick drives the virtual cursor.
-#else
-            PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT,
-#endif
-            "Turn right key."};
+        Key Right = {this, INPUT_ACTION_TURN_RIGHT, "right", PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT, "Turn right key."};
         Key StepLeft = {this, INPUT_ACTION_STRAFE_LEFT, "step_left", PlatformKey::KEY_GAMEPAD_LEFTSTICK_LEFT, "Strafe left key."};
         Key StepRight = {this, INPUT_ACTION_STRAFE_RIGHT, "step_right", PlatformKey::KEY_GAMEPAD_LEFTSTICK_RIGHT, "Strafe right key."};
         Key TimeCalendar = {this, INPUT_ACTION_OPEN_CALENDAR, "time_calendar", PlatformKey::KEY_NONE, "Open calendar key."};

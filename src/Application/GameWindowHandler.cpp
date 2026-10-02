@@ -67,9 +67,10 @@ static char PlatformKeyToChar(PlatformKey key, PlatformModifiers mods) {
 }
 #ifdef __vita__
 namespace {
-// The Vita has no mouse. The right stick drives a virtual cursor in window coordinates (the native 960x544 panel -
-// the mouse event handlers map those down to the 640x480 render space themselves), and the shoulder triggers click
-// it. This lives in the window handler instead of the SDL layer so that it stays backend-agnostic.
+// The Vita has no mouse. Outside the game view the right stick drives a virtual cursor in window coordinates (the
+// native 960x544 panel - the mouse event handlers map those down to the 640x480 render space themselves), and the
+// shoulder triggers click it. This lives in the window handler instead of the SDL layer so that it stays
+// backend-agnostic.
 Pointi g_vitaCursor(480, 272);
 bool g_vitaL2Held = false;
 bool g_vitaR2Held = false;
@@ -641,9 +642,11 @@ bool GameWindowHandler::gamepadAxisEvent(const PlatformGamepadAxisEvent *event) 
         return false;
     }
 
-    // Right stick moves the virtual cursor instead of generating key events.
+    // Outside the game view the right stick moves the virtual cursor. In the game view it turns and looks through the
+    // regular key bindings below.
     float dx = 0.0f, dy = 0.0f;
-    if (key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT || key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN) {
+    if (current_screen_type != SCREEN_GAME &&
+        (key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT || key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN)) {
         dx = key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT ? value : 0.0f;
         dy = key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN ? value : 0.0f;
         if (std::abs(dx) < VITA_CURSOR_DEADZONE) dx = 0.0f;
