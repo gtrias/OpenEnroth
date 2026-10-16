@@ -74,3 +74,8 @@ bool VideoState::keyPressEvent(const PlatformKeyEvent *event) {
     }
     return false;
 }
+
+bool VideoState::gamepadKeyPressEvent(const PlatformGamepadKeyEvent *event) {
+    _skipVideo = true;
+    return true;
+}

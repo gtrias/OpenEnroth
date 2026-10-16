@@ -849,6 +849,7 @@ void MPlayer::HouseMovieLoop() {
 }
 
 std::unique_ptr<IMovie> MPlayer::loadFullScreenMovie(std::string_view movieFileName) {
+    auto startTime = std::chrono::steady_clock::now();
     auto movie = std::make_unique<Movie>();
     if (!loadMovie(movie.get(), movieFileName))
         return nullptr;
@@ -858,6 +859,9 @@ std::unique_ptr<IMovie> MPlayer::loadFullScreenMovie(std::string_view movieFileN
         return nullptr;
     }
 
+    MM_INFO("Movie '{}' ({}, {}x{}) ready in {} ms.", movieFileName, movie->GetFormat(), movie->GetWidth(),
+            movie->GetHeight(),
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count());
     return movie;
 }
 
@@ -997,15 +1001,16 @@ MPlayer::MPlayer() {
     logProxy = std::make_unique<FFmpegLogProxy>();
     pMovie_Track = nullptr;
 
-#ifndef __vita__
-    // On Vita audio is disabled (the vitasdk ffmpeg/SDL audio stack crashes mid-game with a 64 KiB memset onto the
-    // stack), and this constructor runs before NoSound can gate it - it used to open the OpenAL device anyway.
-    if (!provider) {
+#ifdef __vita__
+    bool wantsProvider = !engine->config->debug.NoSound.value(); // The Vita audio path is opt-in through no_sound.
+#else
+    bool wantsProvider = true;
+#endif
+    if (!provider && wantsProvider) {
         provider = new OpenALSoundProvider;
         // logger->Warning("allocation dynamic memory for provider");
         provider->Initialize();
     }
-#endif
 }
 
 MPlayer::~MPlayer() {

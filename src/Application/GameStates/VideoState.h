@@ -23,6 +23,7 @@ class VideoState : public FsmState {
  private:
     virtual bool mousePressEvent(const PlatformMouseEvent *event) override;
     virtual bool keyPressEvent(const PlatformKeyEvent *event) override;
+    virtual bool gamepadKeyPressEvent(const PlatformGamepadKeyEvent *event) override;
 
     Type _type;
     std::string _videoFileName;
