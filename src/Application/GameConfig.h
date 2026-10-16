@@ -423,6 +423,7 @@ class GameConfig : public Config {
             PlatformKey::KEY_GAMEPAD_X,
 #endif
             "Yell key."};
+        Key ZoomIn = {this, INPUT_ACTION_ZOOM_IN, "zoom_in", PlatformKey::KEY_NONE, "Zoom in automap key."};
         Key ZoomOut = {this, INPUT_ACTION_ZOOM_OUT, "zoom_out", PlatformKey::KEY_NONE, "Zoom out automap key."};
         Key QuickSave = {this, INPUT_ACTION_QUICK_SAVE, "quick_save", PlatformKey::KEY_NONE, "Quick save key."};
         Key QuickLoad = {this, INPUT_ACTION_QUICK_LOAD, "quick_load", PlatformKey::KEY_NONE, "Quick load key."};
@@ -529,18 +530,7 @@ class GameConfig : public Config {
 
         Int RenderWidth = {this, "render_width", 640, &ValidateRenderWidth, "Internal rendered resolution width"};
         Int RenderHeight = {this, "render_height", 480, &ValidateRenderHeight, "Internal rendered resolution height"};
-
         // TODO(captainurist): #enum, will need to support cycleIncrement for enums entries.
-
-        Bool GenerateTiles = {this, "generate_tiles", true,
-            "Auto-generate missing tiles on startup and use them where appropriate. MM7 missed some tile transitions, this option fixes this issue."};
-
-        Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes"};
-        Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes"};
-
-        Bool AlwaysCustomCursor = {this, "always_custom_cursor", false,
-            "Always draw a custom cursor using the graphics API and hide the system cursor, even if it's the default mouse arrow cursor."};
-
         Int RenderFilter = {this, "render_filter",
 #ifdef __vita__
             1, // Render internally at 640x480 (the game's native coordinate space) and letterbox-scale to the
@@ -551,6 +541,15 @@ class GameConfig : public Config {
             &ValidateRenderFilter,
             "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
             " 0 - disabled (render dimensions will always match window dimensions), 1 - linear filter, 2 - nearest filter"};
+
+        Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes"};
+        Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes"};
+
+        Bool AlwaysCustomCursor = {this, "always_custom_cursor", false,
+            "Always draw a custom cursor using the graphics API and hide the system cursor, even if it's the default mouse arrow cursor."};
+        Bool GenerateTiles = {this, "generate_tiles", true,
+            "Auto-generate missing tiles on startup and use them where appropriate. MM7 missed some tile transitions, this option fixes this issue."};
+
         ColorEntry DefaultLightColor = {this, "default_light_color", Color(185, 185, 185), "Some light sources have black color. Use this color for such lights instead."};
         Bool AddMoreLights = {this, "add_more_lights", true, "add light sources to pedestals/cauldrons/etc (as in MM8)"};
         Int DefaultLightRadius = {this, "default_light_radius", 172, "Light radius of the additional lights."};
