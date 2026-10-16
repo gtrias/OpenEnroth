@@ -475,6 +475,7 @@ class Movie : public IMovie {
         AVPacket *avpacket = av_packet_alloc();
 
         // keep reading packets until we hit the end or find a video packet
+        bool isWantedVideoFrame = false;
         do {
             if (av_read_frame(format_ctx, avpacket) < 0) {
                 // probably movie is finished
@@ -498,8 +499,9 @@ class Movie : public IMovie {
             } else if (provider) {
                 assert(false);  // unknown stream
             }
-        } while (avpacket->stream_index != video.stream_idx ||
-                 avpacket->pts <= desired_frame_number);
+            isWantedVideoFrame = avpacket->stream_index == video.stream_idx && avpacket->pts > desired_frame_number;
+            av_packet_unref(avpacket);
+        } while (!isWantedVideoFrame);
 
         av_packet_free(&avpacket);
 
@@ -638,11 +640,12 @@ class Movie : public IMovie {
         _texture = GraphicsImage::Create(GetWidth(), GetHeight());
         if (GetFormat() == "bink") {
             // loop through once and add all audio packets to queue
-            while (av_read_frame(format_ctx, &_binkPacket) >= 0) {
-                if (provider && _binkPacket.stream_index == audio.stream_idx) {
+            while (provider && av_read_frame(format_ctx, &_binkPacket) >= 0) {
+                if (_binkPacket.stream_index == audio.stream_idx) {
                     Blob buffer = audio.decode_frame(&_binkPacket);
                     if (buffer) _binkBuffer.push(std::move(buffer));
                 }
+                av_packet_unref(&_binkPacket);
             }
             MM_TRACE("Audio Packets Queued");
 
@@ -682,6 +685,7 @@ class Movie : public IMovie {
                     if (video.last_frame) {
                         _renderTexture(video.last_frame);
                     }
+                    av_packet_unref(&_binkPacket);
                     return false;
                 }
 

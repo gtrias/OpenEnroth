@@ -89,6 +89,9 @@
 
 #include "Library/Logger/Logger.h"
 #include "Library/BuildInfo/BuildInfo.h"
+#ifdef __vita__
+#include "Library/Platform/Vita/VitaMemory.h"
+#endif
 
 #include "Utility/String/Transformations.h"
 
@@ -528,6 +531,9 @@ void PrepareWorld(int _0_box_loading_1_fullscreen) {
     gameTimer->setPaused(true);
     animTimer->setPaused(true);
     DoPrepareWorld(false, (_0_box_loading_1_fullscreen == 0) + 1);
+#ifdef __vita__
+    logVitaMemoryUsage("level loaded");
+#endif
 
     assert(gameTimer->isPaused()); // DoPrepareWorld shouldn't un-pause.
     assert(animTimer->isPaused());
