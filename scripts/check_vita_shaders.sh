@@ -29,6 +29,10 @@ PREAMBLE='#version 100
 #define OE_GLSL_LEGACY 1
 #define OE_GLSL_NO_ARRAY_TEXTURES 1'
 
+# vitaGL hands the translated shader to SceShaccCg, which reserves these Cg keywords. Using one as an identifier fails
+# the compile, and vitaGL then crashes in glLinkProgram instead of reporting it.
+CG_KEYWORDS='row|column|row_major|column_major|vector|string|fixed|packed|pass|technique|compile|decl|emit|get|interface|register|shared|static|typedef|half|texture|sampler_state|pixelshader|vertexshader|pixelfragment|vertexfragment'
+
 TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
@@ -45,6 +49,12 @@ for name in "${SHADERS[@]}"; do
             cat "$TEMP_DIR/err.$name.$stage"
             failures=$((failures + 1))
             continue
+        fi
+
+        if keywords="$(grep -n -w -E "$CG_KEYWORDS" "$TEMP_DIR/pp.$name.$stage")"; then
+            echo "=== $name.$stage: uses Cg keywords as identifiers"
+            echo "$keywords"
+            failures=$((failures + 1))
         fi
 
         if ! output="$(glslangValidator "$TEMP_DIR/pp.$name.$stage" 2>&1)"; then

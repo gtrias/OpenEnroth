@@ -44,9 +44,9 @@ uniform sampler2DArray textureArray0;
 vec2 atlasCoord(vec2 uv, float layer) {
     float padding = textureAtlasInfo.w;
     vec2 cellSize = textureArraySize + vec2(2.0 * padding);
-    float row = floor((layer + 0.5) / textureAtlasInfo.z);
-    float column = layer - row * textureAtlasInfo.z;
-    vec2 cell = vec2(column, row) * cellSize;
+    float cellRow = floor((layer + 0.5) / textureAtlasInfo.z);
+    float cellColumn = layer - cellRow * textureAtlasInfo.z;
+    vec2 cell = vec2(cellColumn, cellRow) * cellSize;
     vec2 wrappedUV = fract(uv);
     vec2 clampedPixel = clamp(wrappedUV * textureArraySize, vec2(0.5), textureArraySize - vec2(0.5));
     vec2 pixel = mix(clampedPixel, vec2(1.0) + wrappedUV * textureArraySize, padding);

@@ -7,6 +7,7 @@
 #include <psp2/power.h>
 
 #include <vitaGL.h>
+#include <vitashark.h>
 
 #include "Library/Logger/Logger.h"
 
@@ -37,6 +38,16 @@ void detachShaderNoop(GLuint program, GLuint shader) {
     (void) program;
     (void) shader;
 }
+
+// vitaGL compiles GLSL inside glLinkProgram and dereferences the program a failed compile leaves null, so the
+// compiler's own messages are the only record of why a shader didn't build.
+void logShaderCompilerMessage(const char *msg, shark_log_level level, int line) {
+    switch (level) {
+    case SHARK_LOG_ERROR: MM_ERROR("Shader compiler, line {}: {}", line, msg); break;
+    case SHARK_LOG_WARNING: MM_WARNING("Shader compiler, line {}: {}", line, msg); break;
+    default: MM_INFO("Shader compiler, line {}: {}", line, msg); break;
+    }
+}
 } // namespace
 
 VitaOpenGLContext::VitaOpenGLContext(int width, int height) {
@@ -63,6 +74,8 @@ VitaOpenGLContext::VitaOpenGLContext(int width, int height) {
     // so leave vitaGL the larger share.
     constexpr int RAM_RESERVED_FOR_ENGINE = 64 * 1024 * 1024;
     (void) vglInitExtended(0, VITA_SCREEN_WIDTH, VITA_SCREEN_HEIGHT, RAM_RESERVED_FOR_ENGINE, SCE_GXM_MULTISAMPLE_NONE);
+    shark_install_log_cb(&logShaderCompilerMessage);
+    shark_set_warnings_level(SHARK_WARN_MEDIUM);
 
     SceKernelFreeMemorySizeInfo freeAfter = {};
     freeAfter.size = sizeof(SceKernelFreeMemorySizeInfo);

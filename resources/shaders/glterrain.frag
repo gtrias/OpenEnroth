@@ -47,9 +47,9 @@ uniform FogParam fog;
 
 #ifdef OE_GLSL_LEGACY
 vec2 atlasCoord(vec2 uv, float layer, vec4 atlasInfo, float size) {
-    float row = floor((layer + 0.5) / atlasInfo.z);
-    float column = layer - row * atlasInfo.z;
-    vec2 cell = vec2(column, row) * (size + 2.0 * atlasInfo.w);
+    float cellRow = floor((layer + 0.5) / atlasInfo.z);
+    float cellColumn = layer - cellRow * atlasInfo.z;
+    vec2 cell = vec2(cellColumn, cellRow) * (size + 2.0 * atlasInfo.w);
     vec2 pixel = atlasInfo.w + clamp(uv * size, vec2(0.5), vec2(size - 0.5));
     return (cell + pixel) / atlasInfo.xy;
 }
