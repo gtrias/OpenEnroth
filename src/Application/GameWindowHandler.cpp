@@ -38,6 +38,7 @@
 #include "Library/Platform/Application/PlatformApplication.h"
 #include "Library/Platform/Interface/PlatformGamepad.h"
 
+#include "Library/Platform/Proxy/ProxyEventLoop.h"
 #include "Utility/Streams/FileOutputStream.h"
 
 static char PlatformKeyToChar(PlatformKey key, PlatformModifiers mods) {
@@ -80,6 +81,11 @@ GameWindowHandler::GameWindowHandler() : PlatformEventFilter(EVENTS_ALL) {
 }
 
 GameWindowHandler::~GameWindowHandler() {}
+
+void GameWindowHandler::processMessages(PlatformEventHandler *eventHandler) {
+    ProxyEventLoop::processMessages(eventHandler);
+    UpdateVirtualCursor();
+}
 
 void GameWindowHandler::UpdateVirtualCursor() {
 #ifdef __vita__

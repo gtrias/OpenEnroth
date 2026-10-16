@@ -8,6 +8,7 @@
 #include "Library/Platform/Interface/PlatformEnums.h"
 #include "Library/Platform/Filters/PlatformEventFilter.h"
 #include "Library/Platform/Application/PlatformApplicationAware.h"
+#include "Library/Platform/Proxy/ProxyEventLoop.h"
 #include "Library/Geometry/Size.h"
 
 namespace Io {
@@ -16,7 +17,7 @@ class Mouse;
 
 class GameConfig;
 
-class GameWindowHandler : public PlatformEventFilter, private PlatformApplicationAware {
+class GameWindowHandler : public PlatformEventFilter, public ProxyEventLoop, private PlatformApplicationAware {
  public:
     GameWindowHandler();
     virtual ~GameWindowHandler();
@@ -51,6 +52,7 @@ class GameWindowHandler : public PlatformEventFilter, private PlatformApplicatio
     void handleKeyPress(PlatformKey key, PlatformModifiers mods, bool isAutoRepeat);
     void handleKeyRelease(PlatformKey key);
 
+    virtual void processMessages(PlatformEventHandler *eventHandler) override;
     virtual bool keyPressEvent(const PlatformKeyEvent *event) override;
     virtual bool keyReleaseEvent(const PlatformKeyEvent *event) override;
     virtual bool mouseMoveEvent(const PlatformMouseEvent *event) override;
