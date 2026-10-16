@@ -51,7 +51,7 @@ vec2 atlasCoord(vec2 uv, float layer) {
     vec2 cell = vec2(mod(layer, textureAtlasInfo.z), floor(layer / textureAtlasInfo.z)) * cellSize;
     vec2 wrappedUV = fract(uv);
     vec2 clampedPixel = clamp(wrappedUV * textureArraySize, vec2(0.5), textureArraySize - vec2(0.5));
-    vec2 pixel = mix(clampedPixel, vec2(1.5) + wrappedUV * textureArraySize, padding);
+    vec2 pixel = mix(clampedPixel, vec2(1.0) + wrappedUV * textureArraySize, padding);
     return (cell + pixel) / textureAtlasInfo.xy;
 }
 #endif

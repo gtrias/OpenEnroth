@@ -99,8 +99,18 @@ static GLuint framebufferDepthRenderbuffer = 0;
 static GLenum textureArrayTarget() {
     return SupportsTextureArrays ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
 }
+enum class TextureArrayWrapMode {
+    TEXTURE_ARRAY_WRAP_MODE_CLAMP,
+    TEXTURE_ARRAY_WRAP_MODE_REPEAT
+};
 
 
+/**
+ * @param width                         Layer width in pixels.
+ * @param height                        Layer height in pixels.
+ * @param layers                        Number of layers in the atlas.
+ * @return                              One when gutters fit, otherwise zero.
+ */
 static int emulatedArrayPadding(int width, int height, int layers) {
     GLint maxTextureSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
@@ -108,6 +118,14 @@ static int emulatedArrayPadding(int width, int height, int layers) {
     return columns > 0 && ((layers + columns - 1) / columns) * (height + 2) <= maxTextureSize ? 1 : 0;
 }
 
+
+/**
+ * @param width                         Layer width in pixels.
+ * @param height                        Layer height in pixels.
+ * @param layers                        Number of layers in the atlas.
+ * @param padding                       Border texels on each cell edge.
+ * @return                              Number of atlas columns.
+ */
 static int emulatedArrayColumns(int width, int height, int layers, int padding) {
     GLint maxTextureSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
@@ -183,7 +201,14 @@ static void allocTextureArray(int width, int height, int layers) {
     }
 }
 
-static void uploadTextureArrayLayer(int width, int height, int layer, const void *pixels, bool repeat) {
+/**
+ * @param width                         Layer width in pixels.
+ * @param height                        Layer height in pixels.
+ * @param layer                         Layer index.
+ * @param pixels                        RGBA layer pixels.
+ * @param wrapMode                      Layer edge behavior.
+ */
+static void uploadTextureArrayLayer(int width, int height, int layer, const void *pixels, TextureArrayWrapMode wrapMode) {
     if (SupportsTextureArrays) {
         glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     } else {
@@ -198,9 +223,13 @@ static void uploadTextureArrayLayer(int width, int height, int layer, const void
             static std::vector<uint8_t> guttered;
             guttered.resize(cellWidth * cellHeight * 4);
             for (int y = 0; y < cellHeight; ++y) {
-                int sourceY = repeat ? (y + height - 1) % height : std::clamp(y - 1, 0, height - 1);
+                int sourceY = wrapMode == TextureArrayWrapMode::TEXTURE_ARRAY_WRAP_MODE_REPEAT
+                                  ? (y + height - 1) % height
+                                  : std::clamp(y - 1, 0, height - 1);
                 for (int x = 0; x < cellWidth; ++x) {
-                    int sourceX = repeat ? (x + width - 1) % width : std::clamp(x - 1, 0, width - 1);
+                    int sourceX = wrapMode == TextureArrayWrapMode::TEXTURE_ARRAY_WRAP_MODE_REPEAT
+                                      ? (x + width - 1) % width
+                                      : std::clamp(x - 1, 0, width - 1);
                     std::memcpy(&guttered[(y * cellWidth + x) * 4], &source[(sourceY * width + sourceX) * 4], 4);
                 }
             }
@@ -501,14 +530,8 @@ void OpenGLRenderer::RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor
 void OpenGLRenderer::BeginScene3D() {
     // Setup for 3D
 
-#ifndef __vita__
-    if (outputRender != outputPresent) {
+    if (outputRender != outputPresent)
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
-        attachFramebufferDepth();
-        GL_Check_Framebuffer(__FUNCTION__);
-    }
-#endif
 
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
@@ -1365,7 +1388,7 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
                     auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
                     // send texture data to gpu
                     uploadTextureArrayLayer(terraintexturesizes[unit], terraintexturesizes[unit], tlayer,
-                                            texture->rgba().pixels().data(), false);
+                                            texture->rgba().pixels().data(), TextureArrayWrapMode::TEXTURE_ARRAY_WRAP_MODE_CLAMP);
                 }
 
                 it++;
@@ -2170,14 +2193,8 @@ void OpenGLRenderer::ResetUIClipRect() {
 void OpenGLRenderer::BeginScene2D() {
     // Setup for 2D
 
-#ifndef __vita__
-    if (outputRender != outputPresent) {
+    if (outputRender != outputPresent)
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
-        attachFramebufferDepth();
-        GL_Check_Framebuffer(__FUNCTION__);
-    }
-#endif
 
     glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
@@ -2645,7 +2662,7 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
                     auto texture = assets->getBitmap(it->first);
 
                     uploadTextureArrayLayer(outbuildtexturewidths[unit], outbuildtextureheights[unit], tlayer,
-                                            texture->rgba().pixels().data(), true);
+                                            texture->rgba().pixels().data(), TextureArrayWrapMode::TEXTURE_ARRAY_WRAP_MODE_REPEAT);
                 }
 
                 it++;
@@ -3121,7 +3138,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
                         auto texture = assets->getBitmap(it->first);
 
                         uploadTextureArrayLayer(bsptexturewidths[unit], bsptextureheights[unit], tlayer,
-                                                texture->rgba().pixels().data(), true);
+                                                texture->rgba().pixels().data(), TextureArrayWrapMode::TEXTURE_ARRAY_WRAP_MODE_REPEAT);
 
                         //numterraintexloaded[0]++;
                     }
@@ -3718,6 +3735,7 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
     attachFramebufferDepth();
     GL_Check_Framebuffer(__FUNCTION__);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 
     glViewport(0, 0, outputRender.w, outputRender.h);
     glScissor(0, 0, outputRender.w, outputRender.h);
