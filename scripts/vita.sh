@@ -58,11 +58,22 @@ log() {
 }
 
 build() {
+    if [[ ! -f "$BUILD_PATH/ffmpeg-vita/lib/libavcodec.a" ]]; then
+        log "Building Vita FFmpeg"
+        VITASDK="$VITASDK" BUILD_DIR="$BUILD_DIR" "$REPO_ROOT/scripts/build_vita_ffmpeg.sh"
+    fi
+
     # CMake regenerates the embedded-resource blob on every configure, and rebuilding that blob takes minutes - so a
     # reconfigure only runs when something it depends on actually changed.
     if configure_needed; then
         log "Reconfiguring $BUILD_DIR"
-        cmake -S "$REPO_ROOT" -B "$BUILD_PATH" >/dev/null
+        if [[ ! -f "$BUILD_PATH/CMakeCache.txt" ]]; then
+            cmake -S "$REPO_ROOT" -B "$BUILD_PATH" \
+                -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake" \
+                -DOpenAL_DIR="$VITASDK/arm-vita-eabi/lib/cmake/OpenAL" >/dev/null
+        else
+            cmake -S "$REPO_ROOT" -B "$BUILD_PATH" >/dev/null
+        fi
         printf '%s' "$CONFIGURE_HASH" > "$BUILD_PATH/.cmake_inputs.stamp"
     fi
 

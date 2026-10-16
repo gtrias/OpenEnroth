@@ -2,16 +2,19 @@
 
 ## Building FFmpeg with movie support
 
-The FFmpeg bundled with VitaSDK omits the Smacker and Bink demuxers and decoders required by MM7 movies. Build the matching FFmpeg 9.0.1 source with the project script before building OpenEnroth:
+The FFmpeg bundled with VitaSDK omits the Smacker and Bink demuxers and decoders required by MM7 movies. `scripts/vita.sh build` runs `scripts/build_vita_ffmpeg.sh` automatically when its FFmpeg prefix is missing. To build it separately, run:
 
 ```sh
 VITASDK=/path/to/vitasdk ./scripts/build_vita_ffmpeg.sh
-VITASDK=/path/to/vitasdk ./scripts/vita.sh build
 ```
 
-The script keeps VitaSDK's audio, demuxer, muxer, encoder, parser, protocol, swscale and swresample configuration, then enables the Smacker and Bink support used by the game. FFmpeg is installed under `build-vita-debug/ffmpeg-vita`. It does not replace files in VitaSDK. CMake prefers that build-tree prefix for the Vita target.
+The script builds matching FFmpeg 9.0.1 with VitaSDK's audio support plus the Smacker and Bink support used by the game. FFmpeg is installed under `build-vita-debug/ffmpeg-vita` and does not replace files in VitaSDK. CMake prefers that build-tree prefix for the Vita target.
 
 Set `BUILD_DIR` to choose another build directory. Set `JOBS` to control the FFmpeg parallel build.
+
+## Vita controls and rendering
+
+vitaGL lacks texture arrays, so the renderer emulates them with 2D atlases limited by the device's maximum texture size. The right stick turns and looks in the game view, and moves a virtual cursor elsewhere. The L2 and R2 triggers click the cursor.
 
 ## Movie data and settings
 
