@@ -1,13 +1,13 @@
 #include "OverlayBindings.h"
 
+#include <memory>
+
 #include <GUI/Overlay/OverlaySystem.h>
 #include <GUI/Overlay/ScriptedOverlay.h>
 
 #include "ImGuiBindings.h"
 
 #include "Library/Logger/Logger.h"
-
-#include <memory>
 
 OverlayBindings::OverlayBindings(OverlaySystem &overlaySystem) : _overlaySystem(overlaySystem) {
 }
