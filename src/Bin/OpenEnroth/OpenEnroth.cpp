@@ -33,8 +33,6 @@
 
 #include "OpenEnrothOptions.h"
 
-#include <pthread.h>
-
 #ifdef __vita__
 // vita-elf-create appends its SCE relocation table right after segment 0, so padding has to cover the gap to the next
 // segment - it fails with "cannot allocate N bytes for SCE data" once the port outgrows the padding.
