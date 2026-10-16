@@ -1,6 +1,7 @@
 #include "LodReader.h"
 
 #include <cassert>
+#include <memory>
 #include <utility>
 #include <algorithm>
 #include <unordered_map>

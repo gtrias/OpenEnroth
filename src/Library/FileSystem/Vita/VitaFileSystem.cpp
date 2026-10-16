@@ -1,5 +1,9 @@
 #include "VitaFileSystem.h"
 
+#include <psp2/io/dirent.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
+
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -7,10 +11,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <psp2/io/dirent.h>
-#include <psp2/io/fcntl.h>
-#include <psp2/io/stat.h>
 
 #include "Library/FileSystem/Interface/FileSystemException.h"
 
