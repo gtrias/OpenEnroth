@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <cctype>
+#include <string>
 
 #include <glad/gl.h> // NOLINT: this is not a C system include.
 
