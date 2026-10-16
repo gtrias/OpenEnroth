@@ -98,7 +98,7 @@ class GameConfig : public Config {
         // TODO(captainurist): Move to [audio]?
         Bool NoSound = {this, "no_sound",
 #ifdef __vita__
-            true, // The vitasdk ffmpeg build crashes in read_frame_internal decoding mp3s - no audio until that's fixed.
+            true, // Vita audio is off because the MP3 path crashed in read_frame_internal with VitaSDK FFmpeg and has not been retested with the port's FFmpeg.
 #else
             false,
 #endif
