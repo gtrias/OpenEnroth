@@ -107,7 +107,10 @@ void VitaFileSystem::_write(FileSystemPathView path, const Blob &data) {
 
 std::unique_ptr<InputStream> VitaFileSystem::_openForReading(FileSystemPathView path) const {
     assert(!path.isEmpty());
-    return std::make_unique<FileInputStream>(NativePath::fromWtf8(makePath(path)));
+    // The streaming LOD and VID readers open a stream per entry, and a read or skip shorter than the buffer refills
+    // the whole buffer from the memory card. A 1 MiB default would turn every small texture or palette into a 1 MiB read.
+    constexpr size_t READ_BUFFER_SIZE = 64 * 1024;
+    return std::make_unique<FileInputStream>(NativePath::fromWtf8(makePath(path)), READ_BUFFER_SIZE);
 }
 
 std::unique_ptr<OutputStream> VitaFileSystem::_openForWriting(FileSystemPathView path) {
