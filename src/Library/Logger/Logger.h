@@ -163,7 +163,9 @@ class Logger {
     void logV(const LogCategory &category, LogLevel level, fmt::string_view fmt, fmt::format_args args);
 
  private:
+#if !defined(__vita__)
     std::mutex _mutex;
+#endif
     LogCategory _defaultCategory;
     LogSink *_sink = nullptr;
 };
@@ -173,13 +175,7 @@ constexpr Logger *fallbackLogger() {
     return &Logger::fallbackLogger;
 }
 
-#if defined(__vita__)
-// pthread-embedded's PTHREAD_MUTEX_INITIALIZER is a pointer cast, not a constant
-// expression, so std::mutex has no constexpr constructor and constinit is impossible.
-extern Logger *logger; // Singleton logger instance, never null - use the macros below.
-#else
 extern constinit Logger *logger; // Singleton logger instance, never null - use the macros below.
-#endif
 } // namespace detail
 
 /**

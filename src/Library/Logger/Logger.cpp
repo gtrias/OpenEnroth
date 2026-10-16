@@ -7,22 +7,15 @@
 #include "LogSource.h"
 #include "FallbackLogSink.h"
 
-#if defined(__vita__)
-static FallbackLogSink fallbackSink; // see Logger.h: no constinit on vita.
-#else
 static constinit FallbackLogSink fallbackSink;
-#endif
-
-#if defined(__vita__)
-Logger Logger::fallbackLogger = Logger(detail::detached, LOG_TRACE, &fallbackSink); // see Logger.h: no constinit on vita.
-#else
 constinit Logger Logger::fallbackLogger = Logger(detail::detached, LOG_TRACE, &fallbackSink);
-#endif
+constinit Logger *detail::logger = detail::fallbackLogger();
 
 #if defined(__vita__)
-Logger *detail::logger = detail::fallbackLogger(); // see Logger.h: no constinit on vita.
-#else
-constinit Logger *detail::logger = detail::fallbackLogger();
+static std::mutex &loggerMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
 #endif
 
 Logger::Logger(LogLevel level, LogSink *sink) {
@@ -47,7 +40,11 @@ Logger::~Logger() {
 void Logger::logV(const LogCategory &category, LogLevel level, fmt::string_view fmt, fmt::format_args args) {
     std::string message = fmt::vformat(fmt, args);
 
+#if defined(__vita__)
+    auto guard = std::lock_guard(loggerMutex());
+#else
     auto guard = std::lock_guard(_mutex);
+#endif
     _sink->write(category, level, message);
 }
 
