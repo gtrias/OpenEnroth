@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-
-set -euo pipefail
+#
+# Build the Vita FFmpeg prefix required by scripts/vita.sh.
+#
+# Usage:
+#   scripts/build_vita_ffmpeg.sh
+#   VITASDK=/path/to/vitasdk BUILD_DIR=build-vita-debug scripts/build_vita_ffmpeg.sh
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VITASDK="${VITASDK:-$HOME/vitasdk}"
-BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/build-vita-debug}"
-SOURCE_DIR="$BUILD_DIR/ffmpeg-9.0.1"
-PREFIX="$BUILD_DIR/ffmpeg-vita"
-ARCHIVE="$BUILD_DIR/ffmpeg-9.0.1.tar.xz"
+VITASDK="${VITASDK:-$HOME/vitasdk/vitasdk}"
+BUILD_DIR="${BUILD_DIR:-build-vita-debug}"
+BUILD_PATH="$REPO_ROOT/$BUILD_DIR"
+SOURCE_DIR="$BUILD_PATH/ffmpeg-9.0.1"
+PREFIX="$BUILD_PATH/ffmpeg-vita"
+ARCHIVE="$BUILD_PATH/ffmpeg-9.0.1.tar.xz"
 SOURCE_URL="https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz"
 JOBS="${JOBS:-$(nproc)}"
 
 if [[ ! -f "$ARCHIVE" ]]; then
-    mkdir -p "$BUILD_DIR"
+    mkdir -p "$BUILD_PATH"
     curl --fail --location --retry 3 --output "$ARCHIVE" "$SOURCE_URL"
 fi
 echo "cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635  $ARCHIVE" | sha256sum --check --status || {
@@ -21,7 +26,7 @@ echo "cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635  $ARCHIVE
 }
 
 if [[ ! -d "$SOURCE_DIR" ]]; then
-    tar -xf "$ARCHIVE" -C "$BUILD_DIR"
+    tar -xf "$ARCHIVE" -C "$BUILD_PATH"
 fi
 
 export PATH="$VITASDK/bin:$PATH"

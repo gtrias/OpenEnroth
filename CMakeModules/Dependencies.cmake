@@ -94,6 +94,9 @@ macro(resolve_dependencies) # Intentionally a macro - we want set() to work in p
     # Prebuilt & user-supplied deps are resolved using the same code here.
     if(OE_BUILD_PLATFORM STREQUAL "vita")
         set(FFmpeg_ROOT "${CMAKE_BINARY_DIR}/ffmpeg-vita")
+        if(NOT EXISTS "${FFmpeg_ROOT}/lib/libavcodec.a")
+            message(FATAL_ERROR "Vita FFmpeg prefix is missing at ${FFmpeg_ROOT}. Run scripts/build_vita_ffmpeg.sh before configuring.")
+        endif()
         list(PREPEND CMAKE_PREFIX_PATH "${FFmpeg_ROOT}")
         foreach(_component AVCODEC AVFORMAT AVUTIL SWSCALE SWRESAMPLE)
             string(TOLOWER "${_component}" _library)
