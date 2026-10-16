@@ -30,22 +30,21 @@ EBOOT="$BUILD_PATH/vpk/eboot.bin"
 # configure time, so a new shader only shows up after a reconfigure) are tracked by content hash - cmake leaves
 # CMakeCache.txt untouched when nothing changes, so comparing timestamps would reconfigure on every single build.
 configure_needed() {
-    [ -f "$BUILD_PATH/CMakeCache.txt" ] || return 0
-
     local stamp="$BUILD_PATH/.cmake_inputs.stamp" hash
     hash="$(
         cd "$REPO_ROOT" || exit 1
         {
-            find . -path "./$BUILD_DIR" -prune -o \( -name 'CMakeLists.txt' -o -name '*.cmake' \) -print0 | LC_ALL=C sort -z | xargs -0 cat
+            find . -type d -name 'build*' -prune -o \( -name 'CMakeLists.txt' -o -name '*.cmake' \) -print0 | LC_ALL=C sort -z | xargs -0 cat
             find resources -type f -print | LC_ALL=C sort
         } | sha256sum
     )"
+    CONFIGURE_HASH="$hash"
 
-    if [ -f "$stamp" ] && [ "$hash" = "$(cat "$stamp")" ]; then
+    if [ -f "$BUILD_PATH/CMakeCache.txt" ] &&
+       [ -f "$stamp" ] && [ "$hash" = "$(cat "$stamp")" ]; then
         return 1
     fi
 
-    printf '%s' "$hash" > "$stamp"
     return 0
 }
 
@@ -64,6 +63,7 @@ build() {
     if configure_needed; then
         log "Reconfiguring $BUILD_DIR"
         cmake -S "$REPO_ROOT" -B "$BUILD_PATH" >/dev/null
+        printf '%s' "$CONFIGURE_HASH" > "$BUILD_PATH/.cmake_inputs.stamp"
     fi
 
     # cmake records per-target compile flags in flags.make, and make doesn't treat them as dependencies - so after a
