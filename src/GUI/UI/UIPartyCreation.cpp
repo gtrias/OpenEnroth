@@ -16,6 +16,7 @@
 #include "Engine/TurnEngine/TurnEngine.h"
 #include "Engine/Spells/SpellEnumFunctions.h"
 #include "Engine/Timer.h"
+#include "Application/GameWindowHandler.h"
 
 #include "GUI/GUIButton.h"
 #include "GUI/GUIFont.h"
@@ -719,6 +720,7 @@ bool PartyCreationUI_LoopInternal() {
     SetCurrentMenuID(MENU_CREATEPARTY);
     while (GetCurrentMenuID() == MENU_CREATEPARTY) {
         MessageLoopWithWait();
+        application->component<GameWindowHandler>()->UpdateVirtualCursor();
 
         animTimer->tick(); // This one is used for animations.
 

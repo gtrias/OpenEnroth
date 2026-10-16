@@ -26,6 +26,7 @@ class GameWindowHandler : public PlatformEventFilter, private PlatformApplicatio
     void UpdateConfigFromWindow(GameConfig *config);
     std::tuple<int, Pointi, Sizei> GetWindowConfigPosition(const GameConfig *config);
     std::tuple<int, Pointi, Sizei> GetWindowRelativePosition(Pointi *position = nullptr);
+    void UpdateVirtualCursor();
 
  private:
     friend class PlatformIntrospection;

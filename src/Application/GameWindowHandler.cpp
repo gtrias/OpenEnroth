@@ -1,22 +1,12 @@
 #include "GameWindowHandler.h"
 
 #include <algorithm>
-#include <vector>
-#include <tuple>
+#include <chrono>
+#include <cmath>
 #include <string>
-#include <cstring>
+#include <tuple>
+#include <vector>
 
-
-#ifdef __vita__
-#include <psp2/io/fcntl.h>
-static void writeWindowProbe(const char *stage) {
-    SceUID file = sceIoOpen("ux0:/data/OpenEnroth/vita-fs-probe.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
-    if (file >= 0) {
-        (void) sceIoWrite(file, stage, strlen(stage));
-        (void) sceIoClose(file);
-    }
-}
-#endif
 #include "Arcomage/Arcomage.h"
 
 #include "GUI/UI/UIPopup.h"
@@ -76,7 +66,11 @@ bool g_vitaL2Held = false;
 bool g_vitaR2Held = false;
 
 constexpr float VITA_CURSOR_DEADZONE = 0.25f;
-constexpr float VITA_CURSOR_SPEED = 12.0f; // Pixels per axis event, ~60 events per second.
+constexpr float VITA_CURSOR_SPEED = 720.0f;
+float g_vitaCursorX = 0.0f;
+float g_vitaCursorY = 0.0f;
+std::chrono::steady_clock::time_point g_vitaCursorUpdate;
+bool g_vitaCursorUpdateInitialized = false;
 } // namespace
 #endif
 
@@ -86,6 +80,37 @@ GameWindowHandler::GameWindowHandler() : PlatformEventFilter(EVENTS_ALL) {
 }
 
 GameWindowHandler::~GameWindowHandler() {}
+
+void GameWindowHandler::UpdateVirtualCursor() {
+#ifdef __vita__
+    const auto now = std::chrono::steady_clock::now();
+    if (!g_vitaCursorUpdateInitialized) {
+        g_vitaCursorUpdate = now;
+        g_vitaCursorUpdateInitialized = true;
+        return;
+    }
+
+    const float elapsedSeconds = std::chrono::duration<float>(now - g_vitaCursorUpdate).count();
+    g_vitaCursorUpdate = now;
+    if (current_screen_type == SCREEN_GAME)
+        return;
+
+    float dx = std::abs(g_vitaCursorX) < VITA_CURSOR_DEADZONE ? 0.0f : g_vitaCursorX;
+    float dy = std::abs(g_vitaCursorY) < VITA_CURSOR_DEADZONE ? 0.0f : g_vitaCursorY;
+    if (dx == 0.0f && dy == 0.0f)
+        return;
+
+    Pointi oldPos = g_vitaCursor;
+    g_vitaCursor.x = std::clamp<int>(g_vitaCursor.x + static_cast<int>(std::round(dx * VITA_CURSOR_SPEED * elapsedSeconds)), 0, 959);
+    g_vitaCursor.y = std::clamp<int>(g_vitaCursor.y + static_cast<int>(std::round(dy * VITA_CURSOR_SPEED * elapsedSeconds)), 0, 543);
+
+    PlatformMouseEvent event;
+    event.type = EVENT_MOUSE_MOVE;
+    event.pos = g_vitaCursor;
+    event.rel = g_vitaCursor - oldPos;
+    mouseMoveEvent(&event);
+#endif
+}
 
 std::tuple<int, Pointi, Sizei> GameWindowHandler::GetWindowConfigPosition(const GameConfig *config) {
     std::vector<Recti> displays = platform->displayGeometries();
@@ -644,27 +669,14 @@ bool GameWindowHandler::gamepadAxisEvent(const PlatformGamepadAxisEvent *event) 
 
     // Outside the game view the right stick moves the virtual cursor. In the game view it turns and looks through the
     // regular key bindings below.
-    float dx = 0.0f, dy = 0.0f;
+    if (key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT)
+        g_vitaCursorX = value;
+    else if (key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN)
+        g_vitaCursorY = value;
+
     if (current_screen_type != SCREEN_GAME &&
-        (key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT || key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN)) {
-        dx = key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT ? value : 0.0f;
-        dy = key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN ? value : 0.0f;
-        if (std::abs(dx) < VITA_CURSOR_DEADZONE) dx = 0.0f;
-        if (std::abs(dy) < VITA_CURSOR_DEADZONE) dy = 0.0f;
-
-        if (dx != 0.0f || dy != 0.0f) {
-            Pointi oldPos = g_vitaCursor;
-            g_vitaCursor.x = std::clamp<int>(g_vitaCursor.x + (int)std::round(dx * VITA_CURSOR_SPEED), 0, 959);
-            g_vitaCursor.y = std::clamp<int>(g_vitaCursor.y + (int)std::round(dy * VITA_CURSOR_SPEED), 0, 543);
-
-            PlatformMouseEvent e;
-            e.type = EVENT_MOUSE_MOVE;
-            e.pos = g_vitaCursor;
-            e.rel = g_vitaCursor - oldPos;
-            mouseMoveEvent(&e);
-        }
+        (key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_RIGHT || key == PlatformKey::KEY_GAMEPAD_RIGHTSTICK_DOWN))
         return false;
-    }
 #endif
 
     // TODO(captainurist): this is temporary, we need separate axis enum and proper axis handling
