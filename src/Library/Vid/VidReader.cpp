@@ -1,21 +1,46 @@
 #include "VidReader.h"
 
-#include <cassert>
 #include <algorithm>
-#include <utility>
+#include <cassert>
+#include <memory>
 #include <ranges>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "Library/FileSystem/Interface/FileSystem.h"
 #include "Library/Snapshots/SnapshotSerialization.h"
 
+#include "Utility/Exception.h"
 #include "Utility/Streams/BlobInputStream.h"
 #include "Utility/String/Ascii.h"
-#include "Utility/Exception.h"
 
 #include "VidSnapshots.h"
+
+class VidEntryInputStream final : public InputStream {
+ public:
+    VidEntryInputStream(std::unique_ptr<InputStream> stream, size_t size, std::string displayPath)
+        : _stream(std::move(stream)) {
+        open({}, size, displayPath);
+    }
+
+ private:
+    size_t _underflow(void *data, size_t size, Buffer *buffer) override {
+        assert(buffer->remaining() == 0);
+        size_t bytes = std::min(size, this->size() - position());
+        buffer->reset(nullptr, nullptr, nullptr);
+        return data ? _stream->read(data, bytes) : _stream->skip(bytes);
+    }
+
+    void _close(bool canThrow) override {
+        _stream->close();
+        InputStream::_close(canThrow);
+    }
+
+ private:
+    std::unique_ptr<InputStream> _stream;
+};
 
 VidReader::VidReader() = default;
 
@@ -105,6 +130,23 @@ bool VidReader::exists(std::string_view filename) const {
     assert(isOpen());
 
     return _files.contains(ascii::toLower(filename));
+}
+
+std::unique_ptr<InputStream> VidReader::openEntryStream(std::string_view filename) const {
+    assert(isOpen());
+
+    const auto pos = _files.find(ascii::toLower(filename));
+    if (pos == _files.cend())
+        throw Exception("Entry '{}' doesn't exist in VID file '{}'", filename, vidDisplayPath());
+    const VidRegion &region = pos->second;
+    std::string displayPath = fmt::format("{}/{}", vidDisplayPath(), filename);
+
+    if (_vid)
+        return std::make_unique<BlobInputStream>(_vid.subBlob(region.offset, region.size).withDisplayPath(displayPath));
+
+    std::unique_ptr<InputStream> stream = _fs->openForReading(_path);
+    stream->skipOrFail(region.offset);
+    return std::make_unique<VidEntryInputStream>(std::move(stream), region.size, std::move(displayPath));
 }
 
 Blob VidReader::read(std::string_view filename) const {

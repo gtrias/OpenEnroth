@@ -38,6 +38,7 @@ extern "C" {
 #include "Media/Audio/AudioPlayer.h"
 #include "Media/Audio/OpenALSoundProvider.h"
 #include "Media/FFmpegLogProxy.h"
+#include "Media/FFmpegVidIoContext.h"
 #include "Media/FFmpegBlobIoContext.h"
 
 #include "Utility/Memory/FreeDeleter.h"
@@ -349,7 +350,9 @@ class Movie : public IMovie {
         ReleaseAVCodec();
 
         if (audio_data_in_device) {
-            provider->DeleteStreamingTrack(&audio_data_in_device);
+            if (provider)
+                provider->DeleteStreamingTrack(&audio_data_in_device);
+            audio_data_in_device = nullptr;
         }
     }
 
@@ -383,7 +386,8 @@ class Movie : public IMovie {
         // Dump information about file onto standard error
         av_dump_format(format_ctx, 0, fileName.c_str(), 0);
 
-        audio.open(format_ctx);
+        if (provider)
+            audio.open(format_ctx);
 
         if (!video.open(format_ctx)) {
             MM_ERROR("Cannot open video stream: {}", fileName);
@@ -394,9 +398,8 @@ class Movie : public IMovie {
         width = video.width;
         height = video.height;
 
-        if (audio.stream_idx >= 0) {
+        if (provider && audio.stream_idx >= 0)
             audio_data_in_device = provider->CreateStreamingTrack16(2, audio.dec_ctx->sample_rate, 2);
-        }
 
         return true;
     }
@@ -404,11 +407,24 @@ class Movie : public IMovie {
     bool LoadFromLOD(const Blob &blob) {
         MM_INFO("Loading movie '{}'.", blob.displayPath());
         _ioContext.reset(Blob::share(blob));
-        if (!format_ctx) {
+        if (!format_ctx)
             format_ctx = avformat_alloc_context();
-        }
+        if (!format_ctx || !_ioContext.avioContext())
+            return false;
         format_ctx->pb = _ioContext.avioContext();
+        format_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
         return Load(blob.displayPath());
+    }
+
+    bool LoadFromVID(VidReader &reader, std::string_view entry) {
+        _vidIoContext.reset(reader, entry);
+        if (!format_ctx)
+            format_ctx = avformat_alloc_context();
+        if (!format_ctx || !_vidIoContext.avioContext())
+            return false;
+        format_ctx->pb = _vidIoContext.avioContext();
+        format_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
+        return Load(std::string(entry));
     }
 
     virtual Blob GetFrame() override {
@@ -462,17 +478,16 @@ class Movie : public IMovie {
             // Is this a packet from the video stream?
             // audio packet - queue into playing
             if (avpacket->stream_index == audio.stream_idx) {
-                Blob buffer = audio.decode_frame(avpacket);
-                if (buffer) {
-                    provider->Stream16(audio_data_in_device,
-                                       buffer.size() / 2,
-                                       buffer.data());
+                if (provider) {
+                    Blob buffer = audio.decode_frame(avpacket);
+                    if (buffer)
+                        provider->Stream16(audio_data_in_device, buffer.size() / 2, buffer.data());
                 }
             } else if (avpacket->stream_index == video.stream_idx) {
               // Decode video frame
               // video packet - decode & maybe show
               video.decode_frame(avpacket);
-            } else {
+            } else if (provider) {
                 assert(false);  // unknown stream
             }
         } while (avpacket->stream_index != video.stream_idx ||
@@ -495,7 +510,7 @@ class Movie : public IMovie {
 
         // loop through once and add all audio packets to queue
         while (av_read_frame(format_ctx, &packet) >= 0) {
-            if (packet.stream_index == audio.stream_idx) {
+            if (provider && packet.stream_index == audio.stream_idx) {
                 Blob buffer = audio.decode_frame(&packet);
                 if (buffer) buffq.push(std::move(buffer));
             }
@@ -536,17 +551,19 @@ class Movie : public IMovie {
 
             if (packet.stream_index == video.stream_idx) {
                 // check if anymore sound frames still in decoder
-                Blob buffer = audio.decode_frame(NULL);
-                if (buffer) buffq.push(std::move(buffer));
+                Blob buffer;
+                if (provider && audio.stream_idx >= 0)
+                    buffer = audio.decode_frame(nullptr);
 
                 // stream required sound frames
                 // nwc and intro are 15fps vid but need 30fps sound
                 // jvc is 10fps video but need 30 fps sound
                 for (int i = 0; i < audioupdaterate; i++) {
                     if (!buffq.empty()) {
-                        provider->Stream16(audio_data_in_device,
-                                            buffq.front().size() / 2,
-                                            buffq.front().data());
+                        if (provider)
+                            provider->Stream16(audio_data_in_device,
+                                               buffq.front().size() / 2,
+                                               buffq.front().data());
                         buffq.pop();
                     }
                 }
@@ -614,7 +631,7 @@ class Movie : public IMovie {
         if (GetFormat() == "bink") {
             // loop through once and add all audio packets to queue
             while (av_read_frame(format_ctx, &_binkPacket) >= 0) {
-                if (_binkPacket.stream_index == audio.stream_idx) {
+                if (provider && _binkPacket.stream_index == audio.stream_idx) {
                     Blob buffer = audio.decode_frame(&_binkPacket);
                     if (buffer) _binkBuffer.push(std::move(buffer));
                 }
@@ -662,19 +679,18 @@ class Movie : public IMovie {
 
                 if (_binkPacket.stream_index == video.stream_idx) {
                     // check if anymore sound frames still in decoder
-                    buffer = audio.decode_frame(NULL);
-                    if (buffer) _binkBuffer.push(std::move(buffer));
+                    if (provider && audio.stream_idx >= 0)
+                        buffer = audio.decode_frame(nullptr);
 
                     // stream required sound frames
                     // nwc and intro are 15fps vid but need 30fps sound
                     // jvc is 10fps video but need 30 fps sound
-                    for (int i = 0; i < _audioUpdateRate; i++) {
-                        if (!_binkBuffer.empty()) {
+                    if (!_binkBuffer.empty()) {
+                        if (provider)
                             provider->Stream16(audio_data_in_device,
                                 _binkBuffer.front().size() / 2,
                                 _binkBuffer.front().data());
-                            _binkBuffer.pop();
-                        }
+                        _binkBuffer.pop();
                     }
 
                     // Decode video frame and show
@@ -736,6 +752,7 @@ class Movie : public IMovie {
     bool playing;
 
     FFmpegBlobIoContext _ioContext;
+    FFmpegVidIoContext _vidIoContext;
 
     GraphicsImage *_texture = nullptr;
 
@@ -768,14 +785,10 @@ void MPlayer::OpenHouseMovie(std::string_view pMovieName, bool bLoop) {
     gameTimer->setPaused(true);
     pAudioPlayer->pauseLooping();
     pAudioPlayer->MusicPause();
-    Blob blob = LoadMovie(pMovieName);
-    if (!blob) {
+    auto movie = std::make_shared<Movie>();
+    if (!loadMovie(movie.get(), pMovieName))
         return;
-    }
-
-    std::shared_ptr<Movie> pMovie = std::make_shared<Movie>();
-    pMovie->LoadFromLOD(blob);
-    pMovie_Track = std::dynamic_pointer_cast<IMovie>(pMovie);
+    pMovie_Track = std::dynamic_pointer_cast<IMovie>(movie);
     sInHouseMovie = pMovieName;
 }
 
@@ -813,11 +826,9 @@ void MPlayer::HouseMovieLoop() {
 
     } else {
         pMovie_Track = nullptr;
-        Blob blob = LoadMovie(sInHouseMovie);
-        if (blob) {
-            std::shared_ptr<Movie> pMovie = std::make_shared<Movie>();
-            pMovie->LoadFromLOD(blob);
-            pMovie_Track = std::dynamic_pointer_cast<IMovie>(pMovie);
+        auto movie = std::make_shared<Movie>();
+        if (loadMovie(movie.get(), sInHouseMovie)) {
+            pMovie_Track = std::dynamic_pointer_cast<IMovie>(movie);
             pMovie_Track->Play();
         }
         // callback to prevent skipped frame draw
@@ -826,15 +837,9 @@ void MPlayer::HouseMovieLoop() {
 }
 
 std::unique_ptr<IMovie> MPlayer::loadFullScreenMovie(std::string_view movieFileName) {
-    Blob blob = LoadMovie(movieFileName);
-    if (!blob) {
-        return nullptr;
-    }
-
     auto movie = std::make_unique<Movie>();
-    if (!movie->LoadFromLOD(blob)) {
+    if (!loadMovie(movie.get(), movieFileName))
         return nullptr;
-    }
 
     bool setupSuccess = movie->prepare();
     if (!setupSuccess) {
@@ -849,16 +854,10 @@ void MPlayer::PlayFullscreenMovie(std::string_view pFilename) {
         return;
     }
 
-    Blob blob = LoadMovie(pFilename);
-    if (!blob) {
+    auto movie = std::make_shared<Movie>();
+    if (!loadMovie(movie.get(), pFilename))
         return;
-    }
-
-    std::shared_ptr<Movie> pMovie = std::make_shared<Movie>();
-    if (!pMovie->LoadFromLOD(blob)) {
-        return;
-    }
-    pMovie_Track = std::dynamic_pointer_cast<IMovie>(pMovie);
+    pMovie_Track = std::dynamic_pointer_cast<IMovie>(movie);
 
     gameTimer->setPaused(true);
     pAudioPlayer->pauseLooping();
@@ -868,9 +867,9 @@ void MPlayer::PlayFullscreenMovie(std::string_view pFilename) {
 
     pMovie_Track->Play();
 
-    if (pMovie->GetFormat() == "bink") {
+    if (movie->GetFormat() == "bink") {
         MM_TRACE("bink file");
-        pMovie->PlayBink();
+        movie->PlayBink();
     } else {
         GraphicsImage *tex = nullptr;
         while (true) {
@@ -952,6 +951,22 @@ Blob MPlayer::LoadMovie(std::string_view video_name) {
     return {};
 }
 
+
+bool MPlayer::loadMovie(Movie *movie, std::string_view videoName) {
+#ifdef __vita__
+    for (VidReader *list : {&might_list, &magic_list}) {
+        for (std::string_view extension : {".bik", ".smk"}) {
+            std::string entryName = fmt::format("{}{}", videoName, extension);
+            if (list->isOpen() && list->exists(entryName))
+                return movie->LoadFromVID(*list, entryName);
+        }
+    }
+    return false;
+#else
+    Blob blob = LoadMovie(videoName);
+    return blob && movie->LoadFromLOD(blob);
+#endif
+}
 void MPlayer::Unload() {
     if (pMovie_Track) {
         pMovie_Track->Stop();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -9,6 +10,7 @@
 #include "Utility/System/NativePath.h"
 
 class FileSystem;
+class InputStream;
 struct VidEntry;
 
 /**
@@ -66,6 +68,15 @@ class VidReader {
      * @throws Exception                If file doesn't exist inside the VID.
      */
     [[nodiscard]] Blob read(std::string_view filename) const;
+
+    /**
+     * Opens one VID entry as a bounded stream without loading its full contents.
+     *
+     * @param filename                  Name of the VID file entry.
+     * @return                          Stream containing only the entry's bytes.
+     * @throws Exception                If the entry doesn't exist or cannot be read.
+     */
+    [[nodiscard]] std::unique_ptr<InputStream> openEntryStream(std::string_view filename) const;
 
     /**
      * @return                          List of all files in the VID.

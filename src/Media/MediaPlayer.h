@@ -15,6 +15,7 @@
 // MOVIE_Death    "losegame"
 // MOVIE_Outro    "end_seq1"
 
+class Movie;
 class VideoList;
 class FFmpegLogProxy;
 
@@ -44,6 +45,7 @@ class MPlayer {
     std::string sInHouseMovie;
 
     Blob LoadMovie(std::string_view video_name);
+    bool loadMovie(Movie *movie, std::string_view videoName);
 };
 
 extern MPlayer *pMediaPlayer;

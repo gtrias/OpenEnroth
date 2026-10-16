@@ -1,4 +1,6 @@
+#include <memory>
 #include <string>
+#include <utility>
 
 #include "Utility/String/Format.h"
 
@@ -10,6 +12,7 @@
 #include "Library/Vid/VidSnapshots.h"
 
 #include "Utility/Streams/BlobOutputStream.h"
+#include "Utility/Streams/InputStream.h"
 
 static Blob makeVidBlob(int entryCount) {
     // VID layout: uint32_t entryCount, then entryCount * VidEntry_MM7, then data.
@@ -75,6 +78,34 @@ UNIT_TEST(VidReader, StreamingMatchesInMemory) {
     EXPECT_TRUE(streamed.exists("VIDEO0.SMK"));
     EXPECT_EQ(streamed.read("VIDEO0.SMK").str(), inMemory.read("VIDEO0.SMK").str());
     EXPECT_THROW((void) streamed.read("nope.smk"), std::exception);
+}
+
+UNIT_TEST(VidReader, OpensBoundedEntryStream) {
+    // A movie entry stream must not read bytes from the next VID entry.
+    constexpr size_t entrySize = 100;
+    size_t headerSize = 4 + 3 * sizeof(VidEntry_MM7);
+
+    Blob vid;
+    BlobOutputStream stream(&vid);
+    serialize(uint32_t(3), &stream);
+    for (int i = 0; i < 3; i++) {
+        VidEntry_MM7 entry = {};
+        snapshot(fmt::format("video{}.smk", i), &entry.name);
+        entry.offset = headerSize + i * entrySize;
+        serialize(entry, &stream);
+    }
+    for (int i = 0; i < 3; i++)
+        stream.write(std::string(entrySize, char('a' + i)));
+    stream.close();
+
+    ScopedTestFile tmp("test.vid", vid.str());
+    DirectoryFileSystem fs(NativePath(""));
+    VidReader reader;
+    reader.open(&fs, "test.vid");
+
+    std::unique_ptr<InputStream> entry = reader.openEntryStream("video1.smk");
+    EXPECT_EQ(entry->size(), entrySize);
+    EXPECT_EQ(entry->readAll(), std::string(entrySize, 'b'));
 }
 
 UNIT_TEST(VidDetect, ValidVid) {

@@ -4,6 +4,7 @@ set(MEDIA_SOURCES
         AudioBaseDataSource.cpp
         AudioBufferDataSource.cpp
         FFmpegBlobIoContext.cpp
+        FFmpegVidIoContext.cpp
         FFmpegLogProxy.cpp
         FFmpegLogSource.cpp
         MediaPlayer.cpp)
@@ -15,6 +16,7 @@ set(MEDIA_HEADERS
         AudioSample.h
         AudioTrack.h
         FFmpegBlobIoContext.h
+        FFmpegVidIoContext.h
         FFmpegLogProxy.h
         FFmpegLogSource.h
         MediaPlayer.h
