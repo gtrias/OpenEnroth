@@ -234,10 +234,6 @@ class AVVideoStream : public AVStreamWrapper {
         frame_len = av_q2d(stream->time_base) * 1000.;
         frames_per_second = 1. / av_q2d(stream->time_base);
 
-        converter = sws_getContext(
-            dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt, width, height,
-            AV_PIX_FMT_BGR32, SWS_BICUBIC, nullptr, nullptr, nullptr);
-
         return true;
     }
 
@@ -261,6 +257,15 @@ class AVVideoStream : public AVStreamWrapper {
                     av_frame_free(&frame);
                     return result;
                 }
+                if (!converter || _sourcePixelFormat != frame->format) {
+                    sws_freeContext(converter);
+                    converter = sws_getContext(
+                        frame->width, frame->height, static_cast<AVPixelFormat>(frame->format), width, height,
+                        AV_PIX_FMT_BGR32, SWS_BICUBIC, nullptr, nullptr, nullptr);
+                    _sourcePixelFormat = frame->format;
+                }
+                if (!converter)
+                    continue;
                 int linesizes[4] = { 0, 0, 0, 0 };
                 if (av_image_fill_linesizes(linesizes, AV_PIX_FMT_RGB32, width) < 0) {
                     assert(false);
@@ -294,6 +299,7 @@ class AVVideoStream : public AVStreamWrapper {
     double frames_per_second = 0;
     double frame_len = 0;
     SwsContext *converter = nullptr;
+    int _sourcePixelFormat = AV_PIX_FMT_NONE;
     int width = 0;
     int height = 0;
 };
