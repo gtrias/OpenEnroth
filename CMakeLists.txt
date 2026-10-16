@@ -72,7 +72,9 @@ endif()
 
 # Set up warnings-as-errors for all compilers.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    add_compile_options(-D_POSIX_C_SOURCE=200809L) # Vita newlib: expose POSIX fileno etc. (_DEFAULT_SOURCE would also enable ctype _N/_U/_L macros that collide with ztd template params).
+    if(OE_BUILD_PLATFORM STREQUAL "vita")
+        add_compile_options(-D_POSIX_C_SOURCE=200809L) # Vita newlib: expose POSIX fileno etc. (_DEFAULT_SOURCE would also enable ctype _N/_U/_L macros that collide with ztd template params).
+    endif()
     add_compile_options(-Werror=return-type) # Control reaches the end of non-void function. This is an error on MSVC.
     add_compile_options(-Werror=unused-result) # Ignoring return value of function declared with 'nodiscard' attribute.
     add_compile_options(-Werror=unused-value) # Expression result unused.
