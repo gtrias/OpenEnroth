@@ -411,7 +411,6 @@ void Menu::MenuLoop() {
             current_screen_type == SCREEN_VIDEO_OPTIONS ||
             current_screen_type == SCREEN_KEYBOARD_OPTIONS)) {
         MessageLoopWithWait();
-        application->component<GameWindowHandler>()->UpdateVirtualCursor();
 
         GameUI_WritePointedObjectStatusString();
         render->BeginScene2D();

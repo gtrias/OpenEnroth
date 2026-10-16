@@ -131,7 +131,6 @@ int Game::run() {
                 render->swapBuffers();
 
                 MessageLoopWithWait();
-                application->component<GameWindowHandler>()->UpdateVirtualCursor();
             }
         }
 
@@ -1556,7 +1555,6 @@ void Game::gameLoop() {
         bool game_finished = false;
         do {
             MessageLoopWithWait();
-            application->component<GameWindowHandler>()->UpdateVirtualCursor();
 
             engine->particle_engine->UpdateParticles();
             engine->decal_builder->bloodsplat_container->uNumBloodsplats = 0;

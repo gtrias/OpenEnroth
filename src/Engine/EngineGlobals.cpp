@@ -1,5 +1,6 @@
 #include "EngineGlobals.h"
 
+#include "Application/GameWindowHandler.h"
 #include "Library/Platform/Application/PlatformApplication.h"
 
 Platform *platform = nullptr;
@@ -12,6 +13,7 @@ PlatformApplication *application = nullptr;
 
 void detail::globalProcessMessages() {
     application->processMessages();
+    application->component<GameWindowHandler>()->UpdateVirtualCursor();
 }
 
 void detail::globalWaitForMessages() {
