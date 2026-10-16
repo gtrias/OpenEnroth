@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <new>
 #include <string>
 
 extern "C" {
@@ -82,10 +83,12 @@ void FFmpegVidIoContext::createAvioContext() {
     constexpr int bufferSize = 4096;
     unsigned char *buffer = static_cast<unsigned char *>(av_malloc(bufferSize));
     if (!buffer)
-        return;
+        throw std::bad_alloc();
     _context = avio_alloc_context(buffer, bufferSize, 0, this, &ffVidRead, nullptr, &ffVidSeek);
-    if (!_context)
+    if (!_context) {
         av_free(buffer);
+        throw std::bad_alloc();
+    }
 }
 
 void FFmpegVidIoContext::destroyAvioContext() {
