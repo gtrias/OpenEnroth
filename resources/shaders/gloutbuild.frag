@@ -37,12 +37,24 @@ uniform PointLight fspointlights[num_point_lights];
 
 #ifdef OE_GLSL_LEGACY
 uniform sampler2D textureArray0;
-uniform float textureLayersScale;
 uniform vec2 textureArraySize;
+uniform vec4 textureAtlasInfo;
 #else
 uniform sampler2DArray textureArray0;
 #endif
 uniform FogParam fog;
+
+#ifdef OE_GLSL_LEGACY
+vec2 atlasCoord(vec2 uv, float layer) {
+    float padding = textureAtlasInfo.w;
+    vec2 cellSize = textureArraySize + vec2(2.0 * padding);
+    vec2 cell = vec2(mod(layer, textureAtlasInfo.z), floor(layer / textureAtlasInfo.z)) * cellSize;
+    vec2 wrappedUV = fract(uv);
+    vec2 clampedPixel = clamp(wrappedUV * textureArraySize, vec2(0.5), textureArraySize - vec2(0.5));
+    vec2 pixel = mix(clampedPixel, vec2(1.5) + wrappedUV * textureArraySize, padding);
+    return (cell + pixel) / textureAtlasInfo.xy;
+}
+#endif
 
 void main() {
     vec3 fragnorm = normalize(vsNorm);
@@ -117,20 +129,20 @@ void main() {
     texcoords.x = (deltas.x + texuv.x) / float(texsize.x);
     texcoords.y = (deltas.y + texuv.y) / float(texsize.y);
 #ifdef OE_GLSL_LEGACY
-    fragcol = texture2D(textureArray0, vec2(texcoords.x, (fract(texcoords.y) + olayer) * textureLayersScale));
+    fragcol = texture2D(textureArray0, atlasCoord(texcoords, floor(olayer + 0.5)));
 #else
     fragcol = texture(textureArray0, vec3(texcoords.x,texcoords.y,olayer));
 #endif
 
 #ifdef OE_GLSL_LEGACY
-    vec4 toplayer = texture2D(textureArray0, vec2(texcoords.x, (fract(texcoords.y) + float(0)) * textureLayersScale));
-    vec4 watercol = texture2D(textureArray0, vec2(texcoords.x, (fract(texcoords.y) + float(waterframe)) * textureLayersScale));
+    vec4 toplayer = texture2D(textureArray0, atlasCoord(texcoords, 0.0));
+    vec4 watercol = texture2D(textureArray0, atlasCoord(texcoords, float(waterframe)));
 #else
     vec4 toplayer = texture(textureArray0, vec3(texcoords.x,texcoords.y,0));
     vec4 watercol = texture(textureArray0, vec3(texcoords.x,texcoords.y,waterframe));
 #endif
 
-    if ((watertiles == 1) && (olayer == 0.0)){
+    if ((watertiles == 1) && (floor(olayer + 0.5) == 0.0)){
 #ifdef OE_GLSL_LEGACY
         if (attribMaskSet(vsAttrib, 1024.0, 16.0)){ // water anim disabled
 #else

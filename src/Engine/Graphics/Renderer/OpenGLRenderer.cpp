@@ -2,14 +2,17 @@
 
 #include "OpenGLVertexBuffer.h"
 
+#include <algorithm>
 #include <climits>
 #include <cmath>
-#include <algorithm>
-#include <memory>
-#include <utility>
+#include <cstring>
+#include <limits>
 #include <map>
+#include <memory>
 #include <string>
 #include <tuple>
+#include <utility>
+#include <vector>
 
 #include <glad/gl.h> // NOLINT: not a C system header.
 
@@ -89,64 +92,124 @@ static bool SupportsDepthTextures = true;
 static bool SupportsClampToBorder = true;
 // ES2 only accepts unsized internal formats (GL_RGBA), unlike desktop GL and ES3.
 static bool SupportsSizedInternalFormats = true;
+static int currentEmulatedArrayColumns = 1;
+static int currentEmulatedArrayPadding = 0;
 static GLuint framebufferDepthRenderbuffer = 0;
 
-// Texture arrays are emulated with a 2D atlas that stacks the layers vertically - that's what platforms without
-// GL_TEXTURE_2D_ARRAY (Vita) get. Bind these instead of calling the GL_TEXTURE_2D_ARRAY entry points directly.
 static GLenum textureArrayTarget() {
     return SupportsTextureArrays ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
 }
 
-// Number of layers that fit into an emulated atlas: layers are stacked vertically, so this is bounded by
-// GL_MAX_TEXTURE_SIZE.
-static int emulatedArrayLayerCapacity(int height) {
-    if (SupportsTextureArrays)
-        return INT_MAX; // Not emulated.
 
+static int emulatedArrayPadding(int width, int height, int layers) {
     GLint maxTextureSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
-    return maxTextureSize / (height > 0 ? height : 1);
+    int columns = std::min(layers, maxTextureSize / (width + 2));
+    return columns > 0 && ((layers + columns - 1) / columns) * (height + 2) <= maxTextureSize ? 1 : 0;
 }
 
-// Layers an emulated atlas actually holds. The allocation, the layer uploads and the shader's layer scale all have to
-// agree on this number, so they all go through here.
-static int emulatedArrayLayerCount(int height, int requestedLayers) {
-    if (SupportsTextureArrays)
-        return requestedLayers;
-
-    int capacity = emulatedArrayLayerCapacity(height);
-    if (requestedLayers > capacity) {
-        MM_CRITICAL("Texture array of {} layers does not fit into an emulated {} px tall atlas (capacity {} layers), "
-                    "textures past the limit will be missing.", requestedLayers, height, capacity);
-        return capacity;
+static int emulatedArrayColumns(int width, int height, int layers, int padding) {
+    GLint maxTextureSize = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+    int cellWidth = width + 2 * padding;
+    int cellHeight = height + 2 * padding;
+    int maxColumns = std::min(layers, maxTextureSize / cellWidth);
+    int bestColumns = 1;
+    int bestArea = INT_MAX;
+    float bestAspectDifference = std::numeric_limits<float>::max();
+    for (int columns = 1; columns <= maxColumns; ++columns) {
+        int rows = (layers + columns - 1) / columns;
+        int atlasWidth = columns * cellWidth;
+        int atlasHeight = rows * cellHeight;
+        if (atlasHeight > maxTextureSize)
+            continue;
+        int area = atlasWidth * atlasHeight;
+        float aspectDifference = std::abs(static_cast<float>(atlasWidth - atlasHeight));
+        if (area < bestArea || (area == bestArea && aspectDifference < bestAspectDifference)) {
+            bestColumns = columns;
+            bestArea = area;
+            bestAspectDifference = aspectDifference;
+        }
     }
-    return requestedLayers;
+    return bestColumns;
 }
+
+static void setEmulatedArrayUniforms(const OpenGLShader &shader, int width, int height, int layers) {
+    if (SupportsTextureArrays)
+        return;
+
+    int padding = emulatedArrayPadding(width, height, layers);
+    int columns = emulatedArrayColumns(width, height, layers, padding);
+    int rows = (layers + columns - 1) / columns;
+    glUniform2f(shader.uniformLocation("textureArraySize"), static_cast<float>(width), static_cast<float>(height));
+    glUniform4f(shader.uniformLocation("textureAtlasInfo"), static_cast<float>(columns * (width + 2 * padding)),
+                static_cast<float>(rows * (height + 2 * padding)), static_cast<float>(columns), static_cast<float>(padding));
+}
+
+static void setEmulatedTerrainArrayUniforms(const OpenGLShader &shader, int waterSize, int waterLayers,
+                                            int tileSize, int tileLayers) {
+    if (SupportsTextureArrays)
+        return;
+
+    auto setAtlasInfo = [&shader](const char *uniformName, int size, int layers) {
+        int padding = emulatedArrayPadding(size, size, layers);
+        int columns = emulatedArrayColumns(size, size, layers, padding);
+        int rows = (layers + columns - 1) / columns;
+        glUniform4f(shader.uniformLocation(uniformName), static_cast<float>(columns * (size + 2 * padding)),
+                    static_cast<float>(rows * (size + 2 * padding)), static_cast<float>(columns), static_cast<float>(padding));
+    };
+    setAtlasInfo("waterAtlasInfo", waterSize, waterLayers);
+    setAtlasInfo("tileAtlasInfo", tileSize, tileLayers);
+    glUniform1f(shader.uniformLocation("waterTextureSize"), static_cast<float>(waterSize));
+    glUniform1f(shader.uniformLocation("tileTextureSize"), static_cast<float>(tileSize));
+}
+
 
 static void bindTextureArray(GLuint texture) {
     glBindTexture(textureArrayTarget(), texture);
 }
 
-// Allocates storage for a texture array of `layers` layers, each `width` x `height` pixels.
 static void allocTextureArray(int width, int height, int layers) {
     if (SupportsTextureArrays) {
         glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     } else {
-        layers = emulatedArrayLayerCount(height, layers);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height * layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        currentEmulatedArrayPadding = emulatedArrayPadding(width, height, layers);
+        currentEmulatedArrayColumns = emulatedArrayColumns(width, height, layers, currentEmulatedArrayPadding);
+        int cellWidth = width + 2 * currentEmulatedArrayPadding;
+        int cellHeight = height + 2 * currentEmulatedArrayPadding;
+        int rows = (layers + currentEmulatedArrayColumns - 1) / currentEmulatedArrayColumns;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, currentEmulatedArrayColumns * cellWidth, rows * cellHeight, 0,
+                     GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     }
 }
 
-// Uploads a single `width` x `height` layer into the currently bound texture array.
-static void uploadTextureArrayLayer(int width, int height, int layer, const void *pixels) {
+static void uploadTextureArrayLayer(int width, int height, int layer, const void *pixels, bool repeat) {
     if (SupportsTextureArrays) {
         glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width, height, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     } else {
-        if (layer >= emulatedArrayLayerCapacity(height))
-            return; // Past the atlas capacity - already reported when the atlas was allocated.
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, layer * height, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        int cellWidth = width + 2 * currentEmulatedArrayPadding;
+        int cellHeight = height + 2 * currentEmulatedArrayPadding;
+        int destinationX = (layer % currentEmulatedArrayColumns) * cellWidth;
+        int destinationY = (layer / currentEmulatedArrayColumns) * cellHeight;
+        if (currentEmulatedArrayPadding == 0) {
+            glTexSubImage2D(GL_TEXTURE_2D, 0, destinationX, destinationY, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        } else {
+            const auto *source = static_cast<const uint8_t *>(pixels);
+            static std::vector<uint8_t> guttered;
+            guttered.resize(cellWidth * cellHeight * 4);
+            for (int y = 0; y < cellHeight; ++y) {
+                int sourceY = repeat ? (y + height - 1) % height : std::clamp(y - 1, 0, height - 1);
+                for (int x = 0; x < cellWidth; ++x) {
+                    int sourceX = repeat ? (x + width - 1) % width : std::clamp(x - 1, 0, width - 1);
+                    std::memcpy(&guttered[(y * cellWidth + x) * 4], &source[(sourceY * width + sourceX) * 4], 4);
+                }
+            }
+            glTexSubImage2D(GL_TEXTURE_2D, 0, destinationX, destinationY, cellWidth, cellHeight, GL_RGBA, GL_UNSIGNED_BYTE,
+                            guttered.data());
+        }
     }
 }
+
 
 static void setTextureArrayParameter(GLenum pname, GLint value) {
     glTexParameteri(textureArrayTarget(), pname, value);
@@ -222,28 +285,6 @@ static void attachFramebufferDepth() {
         glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, framebufferDepthRenderbuffer);
 }
 
-// Tells an emulated-array shader which tile size and layer count the currently bound atlas has. The shaders use these
-// instead of textureSize() and of the array layer coordinate.
-static void setEmulatedArrayUniforms(const OpenGLShader &shader, int width, int height, int layers) {
-    if (SupportsTextureArrays)
-        return;
-
-    glUniform2f(shader.uniformLocation("textureArraySize"), static_cast<float>(width), static_cast<float>(height));
-    glUniform1f(shader.uniformLocation("textureLayersScale"),
-                1.0f / static_cast<float>(std::max(1, emulatedArrayLayerCount(height, layers))));
-}
-
-// Terrain samples two atlases at once, so it gets one scale per atlas instead of the tile-size uniform.
-static void setEmulatedTerrainArrayUniforms(const OpenGLShader &shader, int waterSize, int waterLayers,
-                                            int tileSize, int tileLayers) {
-    if (SupportsTextureArrays)
-        return;
-
-    glUniform1f(shader.uniformLocation("waterLayersScale"),
-                1.0f / static_cast<float>(std::max(1, emulatedArrayLayerCount(waterSize, waterLayers))));
-    glUniform1f(shader.uniformLocation("tileLayersScale"),
-                1.0f / static_cast<float>(std::max(1, emulatedArrayLayerCount(tileSize, tileLayers))));
-}
 
 // The 2D and billboard shaders look up palette entries with texelFetch(), which the legacy dialect doesn't have - it
 // samples at the texel center instead and needs the palette texture size for that.
@@ -460,13 +501,14 @@ void OpenGLRenderer::RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor
 void OpenGLRenderer::BeginScene3D() {
     // Setup for 3D
 
+#ifndef __vita__
     if (outputRender != outputPresent) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
         attachFramebufferDepth();
-
         GL_Check_Framebuffer(__FUNCTION__);
     }
+#endif
 
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
@@ -1322,7 +1364,8 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
                     // get texture
                     auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
                     // send texture data to gpu
-                    uploadTextureArrayLayer(terraintexturesizes[unit], terraintexturesizes[unit], tlayer, texture->rgba().pixels().data());
+                    uploadTextureArrayLayer(terraintexturesizes[unit], terraintexturesizes[unit], tlayer,
+                                            texture->rgba().pixels().data(), false);
                 }
 
                 it++;
@@ -2127,14 +2170,14 @@ void OpenGLRenderer::ResetUIClipRect() {
 void OpenGLRenderer::BeginScene2D() {
     // Setup for 2D
 
+#ifndef __vita__
     if (outputRender != outputPresent) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
         attachFramebufferDepth();
-
         GL_Check_Framebuffer(__FUNCTION__);
     }
+#endif
 
     glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
@@ -2601,7 +2644,8 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
                     // get texture
                     auto texture = assets->getBitmap(it->first);
 
-                    uploadTextureArrayLayer(outbuildtexturewidths[unit], outbuildtextureheights[unit], tlayer, texture->rgba().pixels().data());
+                    uploadTextureArrayLayer(outbuildtexturewidths[unit], outbuildtextureheights[unit], tlayer,
+                                            texture->rgba().pixels().data(), true);
                 }
 
                 it++;
@@ -3076,7 +3120,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
                         // get texture
                         auto texture = assets->getBitmap(it->first);
 
-                        uploadTextureArrayLayer(bsptexturewidths[unit], bsptextureheights[unit], tlayer, texture->rgba().pixels().data());
+                        uploadTextureArrayLayer(bsptexturewidths[unit], bsptextureheights[unit], tlayer,
+                                                texture->rgba().pixels().data(), true);
 
                         //numterraintexloaded[0]++;
                     }
@@ -3624,9 +3669,11 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
+    gladSetGLPostCallback(nullptr);
     SupportsDepthTextures = probeDepthTextureSupport();
     SupportsClampToBorder = probeClampToBorderSupport();
     SupportsSizedInternalFormats = probeSizedInternalFormatSupport();
+    gladSetGLPostCallback(GL_Check_Errors);
     if (!SupportsDepthTextures)
         MM_INFO("GL implementation has no depth textures, using a depth renderbuffer instead.");
     if (!SupportsClampToBorder)
@@ -3667,6 +3714,10 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, outputRender.w, outputRender.h);
         glBindRenderbuffer(GL_RENDERBUFFER, 0);
     }
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
+    attachFramebufferDepth();
+    GL_Check_Framebuffer(__FUNCTION__);
 
     glViewport(0, 0, outputRender.w, outputRender.h);
     glScissor(0, 0, outputRender.w, outputRender.h);
@@ -3679,8 +3730,13 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
     // check gpu gl capability params
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &GPU_MAX_TEX_SIZE);
     assert(GPU_MAX_TEX_SIZE >= 512);
+#ifdef __vita__
+    GPU_MAX_TEX_LAYERS = 0;
+    SupportsTextureArrays = false;
+#else
     glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &GPU_MAX_TEX_LAYERS);
     SupportsTextureArrays = GPU_MAX_TEX_LAYERS >= 256;
+#endif
     glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &GPU_MAX_TEX_UNITS);
     assert(GPU_MAX_TEX_UNITS >= 16);
 

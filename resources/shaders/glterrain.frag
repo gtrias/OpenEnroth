@@ -34,14 +34,25 @@ uniform PointLight fspointlights[num_point_lights];
 
 #ifdef OE_GLSL_LEGACY
 uniform sampler2D textureArray0;
-uniform float waterLayersScale;
 uniform sampler2D textureArray1;
-uniform float tileLayersScale;
+uniform vec4 waterAtlasInfo;
+uniform vec4 tileAtlasInfo;
+uniform float waterTextureSize;
+uniform float tileTextureSize;
 #else
 uniform sampler2DArray textureArray0;
 uniform sampler2DArray textureArray1;
 #endif
 uniform FogParam fog;
+
+#ifdef OE_GLSL_LEGACY
+vec2 atlasCoord(vec2 uv, float layer, vec4 atlasInfo, float size) {
+    vec2 cell = vec2(mod(layer, atlasInfo.z), floor(layer / atlasInfo.z)) * (size + 2.0 * atlasInfo.w);
+    vec2 boundedUV = vec2(clamp(uv.x, 0.0, 1.0 - 1.0 / size), min(fract(uv.y), 1.0 - 1.0 / size));
+    vec2 pixel = vec2(atlasInfo.w + 0.5) + boundedUV * size;
+    return (cell + pixel) / atlasInfo.xy;
+}
+#endif
 
 void main() {
     vec3 fragnorm = normalize(vsNorm);
@@ -49,7 +60,7 @@ void main() {
 
     // get water textures at point
 #ifdef OE_GLSL_LEGACY
-    vec4 watercol = texture2D(textureArray0, vec2(texuv.x, (fract(texuv.y) + float(waterframe)) * waterLayersScale));
+    vec4 watercol = texture2D(textureArray0, atlasCoord(texuv, float(waterframe), waterAtlasInfo, waterTextureSize));
 #else
     vec4 watercol = texture(textureArray0, vec3(texuv.x,texuv.y,waterframe));
 #endif
@@ -58,7 +69,7 @@ void main() {
 
     // get normal texture at point
 #ifdef OE_GLSL_LEGACY
-    fragcol = texture2D(textureArray1, vec2(texuv.x, (fract(texuv.y) + olayer) * tileLayersScale));
+    fragcol = texture2D(textureArray1, atlasCoord(texuv, floor(olayer + 0.5), tileAtlasInfo, tileTextureSize));
 #else
     fragcol = texture(textureArray1, vec3(texuv.x,texuv.y,olayer));
 #endif

@@ -8,7 +8,7 @@
 #ifdef OE_GLSL_LEGACY
 
 bool attribMaskSet(float attrib, float lowBit, float valueCount) {
-    return mod(floor(attrib / lowBit), valueCount) != 0.0;
+    return mod(floor(floor(attrib + 0.5) / lowBit), valueCount) != 0.0;
 }
 
 #endif
