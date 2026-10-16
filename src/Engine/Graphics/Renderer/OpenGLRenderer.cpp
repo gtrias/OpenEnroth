@@ -335,6 +335,13 @@ MM_DEFINE_ENUM_SERIALIZATION_FUNCTIONS(GLenum, CASE_SENSITIVE, {
 } // namespace detail_gl_error
 
 // improved error check - using glad post call back
+static void GL_NoOp_Post_Callback(void *ret, const char *name, GLADapiproc apiproc, int len_args, ...) {
+    (void) ret;
+    (void) name;
+    (void) apiproc;
+    (void) len_args;
+}
+
 void GL_Check_Errors(void *ret, const char *name, GLADapiproc apiproc, int len_args, ...) {
     GLenum err = glad_glGetError();
 
@@ -3686,7 +3693,7 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
-    gladSetGLPostCallback(nullptr);
+    gladSetGLPostCallback(GL_NoOp_Post_Callback);
     SupportsDepthTextures = probeDepthTextureSupport();
     SupportsClampToBorder = probeClampToBorderSupport();
     SupportsSizedInternalFormats = probeSizedInternalFormatSupport();
@@ -3745,7 +3752,6 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
 
     // PostInitialization();
 
-    // check gpu gl capability params
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &GPU_MAX_TEX_SIZE);
     assert(GPU_MAX_TEX_SIZE >= 512);
 #ifdef __vita__
