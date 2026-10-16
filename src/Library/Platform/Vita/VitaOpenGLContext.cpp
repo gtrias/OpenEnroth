@@ -10,7 +10,10 @@
 
 #include "Library/Logger/Logger.h"
 
+#include "Utility/Exception.h"
+
 namespace {
+static bool vitaGlInitAttempted = false;
 // The Vita's SDL backend doesn't surface system suspend/resume events, and neither does vitaGL - an app that keeps
 // rendering into the display queue while the system is going to sleep crashes on wake (that's the crash this port
 // showed after suspending the console). Every frame passes through swapBuffers, so this is the natural place to
@@ -37,6 +40,10 @@ void detachShaderNoop(GLuint program, GLuint shader) {
 } // namespace
 
 VitaOpenGLContext::VitaOpenGLContext(int width, int height) {
+    if (vitaGlInitAttempted)
+        throw Exception("vitaGL is already initialized");
+    vitaGlInitAttempted = true;
+
     SceKernelFreeMemorySizeInfo freeBefore = {};
     freeBefore.size = sizeof(SceKernelFreeMemorySizeInfo);
     sceKernelGetFreeMemorySize(&freeBefore);
@@ -66,7 +73,7 @@ VitaOpenGLContext::VitaOpenGLContext(int width, int height) {
 
     _initialized = glGetString(GL_VERSION) != nullptr;
     if (!_initialized)
-        MM_CRITICAL("vitaGL failed to initialize, no usable OpenGL context.");
+        throw Exception("vitaGL failed to initialize, no usable OpenGL context");
 }
 
 VitaOpenGLContext::~VitaOpenGLContext() {
