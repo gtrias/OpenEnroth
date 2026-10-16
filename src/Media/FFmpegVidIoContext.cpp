@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <string>
 
 extern "C" {
 #include <libavformat/avio.h> // NOLINT: not a C system header.
@@ -27,11 +28,12 @@ int ffVidRead(void *opaque, uint8_t *buffer, int size) {
 
 int64_t ffVidSeek(void *opaque, int64_t offset, int whence) {
     FFmpegVidIoContext *context = static_cast<FFmpegVidIoContext *>(opaque);
-    if (whence & AVSEEK_SIZE)
+    unsigned int seekFlags = static_cast<unsigned int>(whence);
+    if (seekFlags & static_cast<unsigned int>(AVSEEK_SIZE))
         return static_cast<int64_t>(context->_size);
 
     int64_t base;
-    switch (whence & ~AVSEEK_FORCE) {
+    switch (seekFlags & ~static_cast<unsigned int>(AVSEEK_FORCE)) {
     case SEEK_SET:
         base = 0;
         break;

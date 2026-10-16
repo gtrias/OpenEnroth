@@ -412,7 +412,8 @@ class Movie : public IMovie {
         if (!format_ctx || !_ioContext.avioContext())
             return false;
         format_ctx->pb = _ioContext.avioContext();
-        format_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
+        format_ctx->flags = static_cast<int>(
+            static_cast<unsigned int>(format_ctx->flags) | static_cast<unsigned int>(AVFMT_FLAG_CUSTOM_IO));
         return Load(blob.displayPath());
     }
 
@@ -423,7 +424,8 @@ class Movie : public IMovie {
         if (!format_ctx || !_vidIoContext.avioContext())
             return false;
         format_ctx->pb = _vidIoContext.avioContext();
-        format_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
+        format_ctx->flags = static_cast<int>(
+            static_cast<unsigned int>(format_ctx->flags) | static_cast<unsigned int>(AVFMT_FLAG_CUSTOM_IO));
         return Load(std::string(entry));
     }
 
