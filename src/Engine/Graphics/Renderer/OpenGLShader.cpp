@@ -1,7 +1,7 @@
 #include "OpenGLShader.h"
 
+#include <charconv>
 #include <cctype>
-#include <cstdio>
 
 #include <glad/gl.h> // NOLINT: this is not a C system include.
 
@@ -45,9 +45,10 @@ static void bindAttributeLocations(GLuint program, const Blob &vertSource) {
         pos += marker.size();
 
         int location = 0;
-        const int consumed = std::sscanf(source.data() + pos, "%d", &location);
+        const char *begin = source.data() + pos;
+        const auto [end, error] = std::from_chars(begin, source.data() + source.size(), location);
         const size_t semicolon = source.find(';', pos);
-        if (consumed != 1 || semicolon == std::string_view::npos || location < 0)
+        if (error != std::errc() || end == begin || semicolon == std::string_view::npos || location < 0)
             continue;
 
         // The attribute name is the identifier right before the semicolon.
@@ -92,7 +93,6 @@ bool OpenGLShader::load(const Blob &vertSource, const Blob &fragSource, bool ope
     bindAttributeLocations(result, vertSource);
 #endif
 
-    MM_INFO("Linking shader program '{}+{}'.", vertSource.displayPath(), fragSource.displayPath());
     glLinkProgram(result);
 
     // delete the shaders as they're linked into our program now and no longer necessery
@@ -166,7 +166,6 @@ unsigned OpenGLShader::loadShader(const Blob &source, int type, bool openGLES, c
     const char *sources[1] = {static_cast<const char *>(preprocessedSource.data())};
     const GLint lengths[1] = {static_cast<GLint>(preprocessedSource.size())};
 
-    MM_INFO("Compiling shader '{}'.", source.displayPath());
 
     GLuint result = glCreateShader(type);
     glShaderSource(result, 1, sources, lengths);

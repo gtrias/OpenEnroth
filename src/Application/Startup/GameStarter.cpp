@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <string_view>
 
 #ifdef __vita__
 #include <psp2/io/fcntl.h>
@@ -17,6 +18,7 @@ static void writeStartupProbe(std::string_view stage) {
     }
 }
 #endif
+
 
 #include "Application/GameConfig.h"
 #include "Application/Game.h"
@@ -140,27 +142,14 @@ void GameStarter::initialize() {
 
     // Can validate the resolved data path now.
     failOnInvalidPath(_options.dataPath, _platform.get());
-#ifdef __vita__
-    writeStartupProbe("after data validation");
-#endif
 
-    // Create application.
-#ifdef __vita__
-    writeStartupProbe("before PlatformApplication");
-#endif
     _application = std::make_unique<PlatformApplication>(_platform.get());
-#ifdef __vita__
-    writeStartupProbe("after PlatformApplication");
-#endif
     ::application = _application.get();
     ::platform = _application->platform();
     ::eventLoop = _application->eventLoop();
     ::window = _application->window();
     ::eventHandler = _application->eventHandler();
     ::openGLContext = _application->openGLContext(); // OK to store into a global even if not yet initialized
-#ifdef __vita__
-    writeStartupProbe("after application globals");
-#endif
 
     // On linux the only way to set window icon is through an API call. On other OSes this is handled by external
     // mechanisms.
@@ -190,33 +179,16 @@ void GameStarter::initialize() {
     _application->installComponent(std::make_unique<GameWindowHandler>());
     _application->installComponent(std::make_unique<GameTraceHandler>());
     _application->component<EngineRandomComponent>()->setTracing(_options.tracingRng);
-#ifdef __vita__
-    writeStartupProbe("after component setup");
-#endif
 
-    // Init main window. Should happen before the renderer init, which depends on window dimensions & mode.
-#ifdef __vita__
-    writeStartupProbe("before window setup");
-#endif
-    _application->component<GameWindowHandler>()->UpdateWindowFromConfig(_config.get());
-#ifdef __vita__
-    writeStartupProbe("after window setup");
-#endif
+
 
     // Init renderer.
     RendererType rendererType = _options.headless ? RENDERER_NULL : _config->graphics.Renderer.value();
-#ifdef __vita__
-    writeStartupProbe("before renderer creation");
-#endif
+    _application->component<GameWindowHandler>()->UpdateWindowFromConfig(_config.get());
+
     _renderer = RendererFactory().createRenderer(rendererType, _config);
     ::render = _renderer.get();
-#ifdef __vita__
-    writeStartupProbe("after renderer creation");
-#endif
     _renderer->Initialize();
-#ifdef __vita__
-    writeStartupProbe("after renderer initialization");
-#endif
 
     // Init overlays.
     _overlaySystem = std::make_unique<OverlaySystem>(*_renderer, *_application);
@@ -231,13 +203,7 @@ void GameStarter::initialize() {
     // Init engine.
     _engine = std::make_unique<Engine>(_config, *_overlaySystem);
     ::engine = _engine.get();
-#ifdef __vita__
-    MM_INFO("Initializing engine data.");
-#endif
     _engine->Initialize();
-#ifdef __vita__
-    MM_INFO("Engine data initialized.");
-#endif
 
     // Init game.
     _game = std::make_unique<Game>(_application.get(), _config);
