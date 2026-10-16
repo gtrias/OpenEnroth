@@ -89,12 +89,7 @@ class GameConfig : public Config {
         Bool ShowPickedFace = {this, "show_picked_face", false,
             "Face pointed with mouse will flash with red for buildings or green for dungeons."};
 
-        Bool NoIntro = {this, "no_intro",
-#ifdef __vita__
-            true, // The intro movie needs Bink/Smacker decoders that the port's ffmpeg build doesn't have.
-#else
-            false,
-#endif
+        Bool NoIntro = {this, "no_intro", false,
             "Skip intro movie on startup."};
 
         Bool NoLogo = {this, "no_logo", false,
@@ -109,12 +104,7 @@ class GameConfig : public Config {
 #endif
             "Don't play any sounds. Currently in-house movies are not affected."};
 
-        Bool NoVideo = {this, "no_video",
-#ifdef __vita__
-            true, // Same as NoIntro - ffmpeg from vitasdk can't open MM7's .vid movies.
-#else
-            false,
-#endif
+        Bool NoVideo = {this, "no_video", false,
             "Don't play any movies."};
 
         Bool NoActors = {this, "no_actors", false,
