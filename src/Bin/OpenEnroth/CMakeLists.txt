@@ -54,6 +54,9 @@ else()
 endif()
 
 if(TARGET vita_shims)
+if(OE_BUILD_PLATFORM STREQUAL "vita")
+    target_link_options(OpenEnroth PRIVATE -Wl,--allow-multiple-definition)
+endif()
     target_link_libraries(OpenEnroth PRIVATE vita_shims)
 endif()
 

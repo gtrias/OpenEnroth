@@ -128,10 +128,8 @@ macro(resolve_dependencies) # Intentionally a macro - we want set() to work in p
     # If you're getting an error here, try passing something like -DOPENAL_ROOT=/opt/homebrew/opt/openal-soft to cmake.
     find_package(OpenAL CONFIG REQUIRED)
     if(OE_BUILD_PLATFORM STREQUAL "vita")
-        find_package(Threads REQUIRED)
         get_target_property(OPENAL_LINK_LIBRARIES OpenAL::OpenAL INTERFACE_LINK_LIBRARIES)
-        list(REMOVE_ITEM OPENAL_LINK_LIBRARIES "$<LINK_ONLY:-pthread>")
-        list(APPEND OPENAL_LINK_LIBRARIES "$<LINK_ONLY:Threads::Threads>")
+        list(APPEND OPENAL_LINK_LIBRARIES "$<LINK_ONLY:-pthread>")
         set_property(TARGET OpenAL::OpenAL PROPERTY INTERFACE_LINK_LIBRARIES "${OPENAL_LINK_LIBRARIES}")
     endif()
 
