@@ -92,6 +92,17 @@ macro(resolve_dependencies) # Intentionally a macro - we want set() to work in p
     endif()
 
     # Prebuilt & user-supplied deps are resolved using the same code here.
+    if(OE_BUILD_PLATFORM STREQUAL "vita")
+        set(FFmpeg_ROOT "${CMAKE_BINARY_DIR}/ffmpeg-vita")
+        list(PREPEND CMAKE_PREFIX_PATH "${FFmpeg_ROOT}")
+        foreach(_component AVCODEC AVFORMAT AVUTIL SWSCALE SWRESAMPLE)
+            string(TOLOWER "${_component}" _library)
+            set(${_component}_INCLUDE_DIRS "${FFmpeg_ROOT}/include" CACHE PATH "" FORCE)
+            set(${_component}_LIBRARIES "${FFmpeg_ROOT}/lib/lib${_library}.a" CACHE FILEPATH "" FORCE)
+        endforeach()
+        set(FFMPEG_LIBRARIES "" CACHE STRING "" FORCE)
+    endif()
+
     find_package(ZLIB REQUIRED)
     find_package(FFmpeg REQUIRED)
 
