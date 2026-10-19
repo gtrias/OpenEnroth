@@ -2,14 +2,17 @@
 #
 # Vita development loop for the OpenEnroth PS Vita port.
 #
-# Vita is a fullscreen-only, SDL3-with-vitaGL target. Installing a VPK is only needed when packaging changes - for
-# code changes it's enough to replace the installed eboot.bin over VitaShell's FTP server.
+# Vita is a fullscreen-only, SDL3-with-vitaGL target. Installing a VPK is only needed when packaging changes (the
+# bubble icon, LiveArea images or param.sfo) - for code changes it's enough to replace the installed eboot.bin over
+# VitaShell's FTP server.
 #
 # Usage:
-#   scripts/vita.sh build     # compile, and produce build-vita-debug/vpk/eboot.bin
-#   scripts/vita.sh deploy    # upload eboot.bin to ux0:/app/<TITLE_ID>/eboot.bin and verify the transfer
-#   scripts/vita.sh fetch     # download the newest log & crash dump, and symbolize the dump against the debug ELF
-#   scripts/vita.sh           # build + deploy
+#   scripts/vita.sh build       # compile, and produce build-vita-debug/vpk/eboot.bin
+#   scripts/vita.sh deploy      # upload eboot.bin to ux0:/app/<TITLE_ID>/eboot.bin and verify the transfer
+#   scripts/vita.sh vpk         # build, then package build-vita-debug/OpenEnroth.vpk with packaging/vita/sce_sys
+#   scripts/vita.sh deploy-vpk  # upload the VPK to ux0:/data/OpenEnroth.vpk, to be installed from VitaShell
+#   scripts/vita.sh fetch       # download the newest log & crash dump, and symbolize the dump against the debug ELF
+#   scripts/vita.sh             # build + deploy
 #
 # Environment overrides: VITA_HOST (host:port), VITASDK, BUILD_DIR, TITLE_ID, VITA_CORE_DUMP.
 
@@ -25,6 +28,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_PATH="$REPO_ROOT/$BUILD_DIR"
 DEBUG_ELF="$BUILD_PATH/src/Bin/OpenEnroth/OpenEnroth"
 EBOOT="$BUILD_PATH/vpk/eboot.bin"
+VPK="$BUILD_PATH/OpenEnroth.vpk"
 
 # True when cmake has to run again. Both the build-system files and the resource file list (resources are globbed at
 # configure time, so a new shader only shows up after a reconfigure) are tracked by content hash - cmake leaves
@@ -114,6 +118,27 @@ deploy() {
     printf '\nLaunch OpenEnroth on the Vita, then run: %s fetch\n' "$0"
 }
 
+vpk() {
+    log "Packaging $VPK"
+    local sfo="$BUILD_PATH/vpk/param.sfo"
+    # ATTRIBUTE2=12 grants the extended memory budget the engine relies on.
+    "$VITASDK/bin/vita-mksfoex" -s TITLE_ID="$TITLE_ID" -s APP_VER=00.01 -d ATTRIBUTE2=12 "OpenEnroth" "$sfo"
+
+    local args=(-s "$sfo" -b "$EBOOT") file
+    while IFS= read -r file; do
+        args+=(-a "$REPO_ROOT/packaging/vita/$file=$file")
+    done < <(cd "$REPO_ROOT/packaging/vita" && find sce_sys -type f | LC_ALL=C sort)
+    rm -f "$VPK"
+    "$VITASDK/bin/vita-pack-vpk" "${args[@]}" "$VPK"
+    ls -l "$VPK"
+}
+
+deploy_vpk() {
+    log "Uploading $VPK to ux0:/data/OpenEnroth.vpk"
+    curl_vita -T "$VPK" "ftp://$VITA_HOST/ux0:/data/OpenEnroth.vpk"
+    printf '\nInstall ux0:/data/OpenEnroth.vpk from VitaShell. The game data in ux0:/data/OpenEnroth is kept.\n'
+}
+
 newest_remote_line() {
     # $1 - remote directory, $2 - sed address pattern matching the LIST lines to consider.
     # Note the sort by file name: both logs and crash dumps carry a timestamp in their name, which is monotonic -
@@ -178,12 +203,14 @@ fetch() {
 }
 
 case "${1:-all}" in
-    build)     build ;;
-    deploy)    deploy ;;
-    fetch)     fetch ;;
-    configure) log "Reconfiguring $BUILD_DIR" && cmake -S "$REPO_ROOT" -B "$BUILD_PATH" ;;
+    build)      build ;;
+    deploy)     deploy ;;
+    vpk)        build; vpk ;;
+    deploy-vpk) deploy_vpk ;;
+    fetch)      fetch ;;
+    configure)  log "Reconfiguring $BUILD_DIR" && cmake -S "$REPO_ROOT" -B "$BUILD_PATH" ;;
     # Note the plain `;`: bash suppresses errexit for a function called from an `&&` list, which would make a failed
     # build silently package and deploy the previous binary.
-    all)       build; deploy ;;
-    *)         echo "Usage: $0 [build|deploy|fetch|configure]" >&2 && exit 2 ;;
+    all)        build; deploy ;;
+    *)          echo "Usage: $0 [build|deploy|vpk|deploy-vpk|fetch|configure]" >&2 && exit 2 ;;
 esac

@@ -12,6 +12,10 @@ The script builds matching FFmpeg 9.0.1 with VitaSDK's audio support plus the Sm
 
 Set `BUILD_DIR` to choose another build directory. Set `JOBS` to control the FFmpeg parallel build.
 
+## Packaging a VPK
+
+`scripts/vita.sh vpk` builds the game and packages `build-vita-debug/OpenEnroth.vpk` with the bubble icon and LiveArea images from `packaging/vita/sce_sys`. `scripts/vita.sh deploy-vpk` uploads it to `ux0:/data/OpenEnroth.vpk` for installing from VitaShell. The game data in `ux0:/data/OpenEnroth` survives a reinstall. The images are generated from `resources/images/OpenEnroth.png` by `scripts/make_vita_livearea.py`.
+
 ## Vita controls and rendering
 
 vitaGL lacks texture arrays, so the renderer emulates them with 2D atlases limited by the device's maximum texture size. The right stick turns and looks in the game view, and moves a virtual cursor elsewhere. The L2 and R2 triggers click the cursor.
