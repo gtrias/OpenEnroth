@@ -164,6 +164,8 @@ void main() {
 
     // stack stationary
     for(int i = 1; i < num_point_lights; i++) {
+        if (fspointlights[i].type == 0.0)
+            break; // Lights are packed, the first unused one ends the list.
         if (fspointlights[i].type == 1.0)
             result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir);
     }
@@ -173,6 +175,8 @@ void main() {
     // stack mobile
 
     for(int i = 1; i < num_point_lights; i++) {
+        if (fspointlights[i].type == 0.0)
+            break; // Lights are packed, the first unused one ends the list.
         if (fspointlights[i].type == 2.0)
             result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir);
     }
