@@ -45,7 +45,7 @@ cd "$SOURCE_DIR"
     --disable-network \
     --enable-libmp3lame \
     --disable-everything \
-    --enable-decoder='aac,adpcm_ima_qt,alac,ape,ac3,cinepak,flac,mp3,mpeg4,opus,pcm_s16le,pcm_s24le,pcm_s32le,pcm_s8,pcm_u8,svq1,tta,vorbis,wmalossless,wavpack,smacker,smackaud,bink,binkaudio_rdft,binkaudio_dct' \
+    --enable-decoder='aac,adpcm_ima_qt,adpcm_ima_wav,alac,ape,ac3,cinepak,flac,mp3,mpeg4,opus,pcm_s16le,pcm_s24le,pcm_s32le,pcm_s8,pcm_u8,svq1,tta,vorbis,wmalossless,wavpack,smacker,smackaud,bink,binkaudio_rdft,binkaudio_dct' \
     --enable-demuxer='aac,ac3,aiff,ape,asf,avi,caf,cine,flac,matroska,mp3,mp4,m4a,pcm_s16le,pcm_s24le,pcm_s32le,pcm_s8,pcm_u8,ogg,opus,tta,wav,webm,wv,smacker,bink' \
     --enable-muxer='aac,ac3,aiff,ape,asf,avi,caf,flac,matroska,mp3,mp4,m4a,pcm_s16le,pcm_s24le,pcm_s32le,pcm_s8,pcm_u8,ogg,opus,tta,wav,webm,wv' \
     --enable-encoder='aac,alac,ape,ac3,flac,libmp3lame,mpeg4,opus,pcm_s16le,pcm_s24le,pcm_s32le,pcm_s8,pcm_u8,tta,vorbis,wmalossless,wavpack' \

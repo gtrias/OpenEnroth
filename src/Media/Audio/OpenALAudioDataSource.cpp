@@ -18,7 +18,8 @@ bool OpenALAudioDataSource::Open() {
         return true;
     }
 
-    _baseDataSource->Open();
+    if (!_baseDataSource->Open())
+        return false;
 
     bool result = true;
     ALsizei al_sample_rate = GetSampleRate();
