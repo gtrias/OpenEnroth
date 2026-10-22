@@ -58,8 +58,8 @@ cd "$SOURCE_DIR"
     --cpu=cortex-a9 \
     --disable-armv6t2 \
     --target-os=none \
-    --extra-cflags='-std=gnu11 -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wl,-q -O2 -ftree-vectorize -fomit-frame-pointer -ffast-math -D_BSD_SOURCE' \
-    --extra-cxxflags='-Wl,-q -O2 -ftree-vectorize -fomit-frame-pointer -ffast-math -fno-rtti -fno-exceptions -std=gnu++11 -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -D_BSD_SOURCE' \
+    --extra-cflags='-std=gnu11 -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wl,-q -O2 -ftree-vectorize -fomit-frame-pointer -D_BSD_SOURCE' \
+    --extra-cxxflags='-Wl,-q -O2 -ftree-vectorize -fomit-frame-pointer -fno-rtti -fno-exceptions -std=gnu++11 -Wno-error=implicit-function-declaration -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -D_BSD_SOURCE' \
     --extra-ldflags="-L$VITASDK/arm-vita-eabi/lib" \
     --extra-libs=-lmpg123 \
     --disable-bzlib \
@@ -72,4 +72,5 @@ cd "$SOURCE_DIR"
 
 make -j"$JOBS"
 make install
+sha256sum "$REPO_ROOT/scripts/build_vita_ffmpeg.sh" | cut -d' ' -f1 > "$PREFIX/.build_script.sha256"
 printf 'Installed Vita FFmpeg 9.0.1 to %s\n' "$PREFIX"

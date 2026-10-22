@@ -20,6 +20,9 @@ static std::mutex globalFFmpegLogMutex;
 static FFmpegLogProxy *globalFFmpegLogger = nullptr;
 
 static void ffmpegLogCallback(void *ptr, int level, const char *format, va_list args) {
+    if (level > av_log_get_level())
+        return; // FFmpeg calls the callback for every message and leaves the level check to it.
+
     auto guard = std::lock_guard(globalFFmpegLogMutex);
 
     assert(globalFFmpegLogger);
