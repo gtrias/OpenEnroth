@@ -75,7 +75,10 @@ log() {
 }
 
 build() {
-    if [[ ! -f "$BUILD_PATH/ffmpeg-vita/lib/libavcodec.a" ]]; then
+    # The prefix records the hash of the script that built it, so changed configure flags rebuild FFmpeg.
+    local ffmpeg_stamp="$BUILD_PATH/ffmpeg-vita/.build_script.sha256"
+    if [[ ! -f "$ffmpeg_stamp" ]] ||
+       [[ "$(cat "$ffmpeg_stamp")" != "$(sha256sum "$REPO_ROOT/scripts/build_vita_ffmpeg.sh" | cut -d' ' -f1)" ]]; then
         log "Building Vita FFmpeg"
         VITASDK="$VITASDK" BUILD_DIR="$BUILD_DIR" "$REPO_ROOT/scripts/build_vita_ffmpeg.sh"
     fi
@@ -243,15 +246,16 @@ run() {
     if [ "$do_build" = 1 ]; then
         build
     fi
+    # A running game keeps eboot.bin open, and the upload fails with 550.
+    vita_cmd "quit $TITLE_ID" 3 >/dev/null || return 1
+    sleep 2
     deploy >/dev/null
 
     local logs_dir='/ux0:/data/OpenEnroth/logs/' old_log old_dump
     old_log="$(remote_name "$(newest_remote_line "$logs_dir" '/openenroth_.*\.log$/p')")"
     old_dump="$(remote_name "$(newest_remote_line '/ux0:/data/' '/psp2core-[^ ]*\.psp2dmp\(\.tmp\)\?$/p')")"
 
-    log "Relaunching $TITLE_ID"
-    vita_cmd "quit $TITLE_ID" 3 >/dev/null || return 1
-    sleep 2
+    log "Launching $TITLE_ID"
     vita_cmd "launch $TITLE_ID" 3 >/dev/null
     local started=$SECONDS
     [ -n "$input" ] && (vita_cmd "$input" 600 >/dev/null &)
@@ -268,17 +272,20 @@ run() {
     done
 
     log "Streaming $log_name"
-    local local_log="$out_dir/$log_name" offset=0 size dump verdict=''
+    local local_log="$out_dir/$log_name" fresh="$out_dir/.$log_name.fresh" shown dump verdict=''
     : > "$local_log"
     while [ -z "$verdict" ]; do
         sleep 2
-        size="$(remote_size "$logs_dir$log_name")"
-        if [ -n "$size" ] && [ "$size" -gt "$offset" ]; then
-            curl_vita -r "$offset-" "ftp://$VITA_HOST$logs_dir$log_name" | tee -a "$local_log" |
-                grep -v -E 'Shader compiler|Loaded shader|Memory at loading' || true
-            offset="$size"
-            if tail -c +1 "$local_log" | grep -q -E "$until_regex"; then
-                verdict="PASS: log matched '$until_regex' after $((SECONDS - started)) s."
+        # The logs are small, so refetch the whole file and print what's new. A ranged fetch races with the game
+        # appending to the file, which printed some lines twice.
+        if curl_vita -o "$fresh" "ftp://$VITA_HOST$logs_dir$log_name" 2>/dev/null; then
+            shown="$(stat -c %s "$local_log")"
+            if [ "$(stat -c %s "$fresh")" -gt "$shown" ]; then
+                tail -c +"$((shown + 1))" "$fresh" | grep -v -E 'Shader compiler|Loaded shader|Memory at loading' || true
+                mv "$fresh" "$local_log"
+                if grep -q -E "$until_regex" "$local_log"; then
+                    verdict="PASS: log matched '$until_regex' after $((SECONDS - started)) s."
+                fi
             fi
         fi
         dump="$(remote_name "$(newest_remote_line '/ux0:/data/' '/psp2core-[^ ]*\.psp2dmp\(\.tmp\)\?$/p')")"

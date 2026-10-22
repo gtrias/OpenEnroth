@@ -5,9 +5,10 @@
 #include <cstdint>
 #include <thread>
 
-#include "Library/Logger/Logger.h"
+#include <psp2/kernel/cpu.h>
+#include <psp2/kernel/threadmgr.h>
 
-#include "VitaMemory.h"
+#include "Library/Logger/Logger.h"
 
 namespace {
 std::atomic<uint64_t> mainLoopTicks = 0;
@@ -19,6 +20,11 @@ int64_t nowMs() {
 }
 
 void diagnosticsThread(int stallSeconds) {
+    // A main thread spinning at the default priority on the same core would starve this thread, so run above it on
+    // a core of its own.
+    sceKernelChangeThreadPriority(sceKernelGetThreadId(), 64);
+    sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_2);
+
     constexpr int64_t HEARTBEAT_MS = 10000;
     uint64_t previousTicks = mainLoopTicks.load();
     int64_t previousHeartbeatMs = nowMs();
@@ -29,17 +35,13 @@ void diagnosticsThread(int stallSeconds) {
         int64_t lastTick = lastTickMs.load();
         int64_t stallMs = lastTick ? now - lastTick : 0;
 
-        if (stallSeconds > 0 && stallMs > stallSeconds * 1000ll) {
-            MM_CRITICAL("Main loop stalled for {} s, crashing on purpose so the core dump shows the main thread.",
-                        stallMs / 1000);
-            __builtin_trap();
-        }
+        if (stallSeconds > 0 && stallMs > stallSeconds * 1000ll)
+            __builtin_trap(); // Not logged: the stalled main thread may be the one holding the logger's lock.
 
         if (now - previousHeartbeatMs >= HEARTBEAT_MS) {
             uint64_t ticks = mainLoopTicks.load();
             float fps = (ticks - previousTicks) * 1000.0f / (now - previousHeartbeatMs);
             MM_INFO("Heartbeat: {:.1f} fps, main loop last ticked {} ms ago.", fps, stallMs);
-            logVitaMemoryUsage("heartbeat");
             previousTicks = ticks;
             previousHeartbeatMs = now;
         }
@@ -49,6 +51,7 @@ void diagnosticsThread(int stallSeconds) {
 
 void startVitaDiagnostics(int stallSeconds) {
     MM_INFO("Vita diagnostics started, main loop stall limit {} s (0 = off).", stallSeconds);
+    lastTickMs.store(nowMs());
     std::thread(diagnosticsThread, stallSeconds).detach();
 }
 

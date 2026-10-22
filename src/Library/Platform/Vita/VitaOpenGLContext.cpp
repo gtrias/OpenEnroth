@@ -75,7 +75,7 @@ VitaOpenGLContext::VitaOpenGLContext(int width, int height) {
     constexpr int RAM_RESERVED_FOR_ENGINE = 64 * 1024 * 1024;
     (void) vglInitExtended(0, VITA_SCREEN_WIDTH, VITA_SCREEN_HEIGHT, RAM_RESERVED_FOR_ENGINE, SCE_GXM_MULTISAMPLE_NONE);
     shark_install_log_cb(&logShaderCompilerMessage);
-    shark_set_warnings_level(SHARK_WARN_MEDIUM);
+    shark_set_warnings_level(SHARK_WARN_SILENT);
 
     SceKernelFreeMemorySizeInfo freeAfter = {};
     freeAfter.size = sizeof(SceKernelFreeMemorySizeInfo);

@@ -186,6 +186,9 @@ void GameStarter::initialize() {
 
 
     // Init renderer.
+#ifdef __vita__
+    startVitaDiagnostics(_config->debug.VitaWatchdog.value());
+#endif
     RendererType rendererType = _options.headless ? RENDERER_NULL : _config->graphics.Renderer.value();
     _application->component<GameWindowHandler>()->UpdateWindowFromConfig(_config.get());
 
@@ -206,9 +209,6 @@ void GameStarter::initialize() {
     // Init engine.
     _engine = std::make_unique<Engine>(_config, *_overlaySystem);
     ::engine = _engine.get();
-#ifdef __vita__
-    startVitaDiagnostics(_config->debug.VitaWatchdog.value());
-#endif
     _engine->Initialize();
 
     // Init game.
