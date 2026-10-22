@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.27 FATAL_ERROR)
 
 set(LIBRARY_PLATFORM_VITA_SOURCES
+        VitaDiagnostics.cpp
         VitaMemory.cpp
         VitaOpenGLContext.cpp)
 
 set(LIBRARY_PLATFORM_VITA_HEADERS
+        VitaDiagnostics.h
         VitaMemory.h
         VitaOpenGLContext.h)
 

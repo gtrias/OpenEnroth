@@ -51,6 +51,9 @@ static void writeStartupProbe(std::string_view stage) {
 #include "Library/Image/Png.h"
 #include "Library/Platform/Interface/Platform.h"
 #include "Library/Platform/Null/NullPlatform.h"
+#ifdef __vita__
+#include "Library/Platform/Vita/VitaDiagnostics.h"
+#endif
 #include "Library/FileSystem/Memory/MemoryFileSystem.h"
 
 #include "Scripting/AudioBindings.h"
@@ -203,6 +206,9 @@ void GameStarter::initialize() {
     // Init engine.
     _engine = std::make_unique<Engine>(_config, *_overlaySystem);
     ::engine = _engine.get();
+#ifdef __vita__
+    startVitaDiagnostics(_config->debug.VitaWatchdog.value());
+#endif
     _engine->Initialize();
 
     // Init game.

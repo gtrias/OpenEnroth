@@ -89,6 +89,11 @@ class GameConfig : public Config {
         Bool ShowPickedFace = {this, "show_picked_face", false,
             "Face pointed with mouse will flash with red for buildings or green for dungeons."};
 
+#ifdef __vita__
+        Int VitaWatchdog = {this, "vita_watchdog", 0,
+            "Crash on purpose with a core dump when the main loop stalls for this many seconds. 0 disables it."};
+#endif
+
         Bool NoIntro = {this, "no_intro", false,
             "Skip intro movie on startup."};
 

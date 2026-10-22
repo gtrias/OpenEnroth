@@ -13,6 +13,17 @@
 #   scripts/vita.sh deploy-vpk  # upload the VPK to ux0:/data/OpenEnroth.vpk, to be installed from VitaShell
 #   scripts/vita.sh fetch       # download the newest log & crash dump, and symbolize the dump against the debug ELF
 #   scripts/vita.sh             # build + deploy
+#   scripts/vita.sh cmd 'quit OPEN00001'   # send a vitacompanion command (port 1338)
+#   scripts/vita.sh run [options]          # build, deploy, relaunch on the Vita, stream the log until a verdict
+#       --no-build        deploy the current eboot.bin as is
+#       --until REGEX     stop with success once a log line matches (default: the first heartbeat after the menu)
+#       --input CMDS      vitacompanion input script sent after launch, e.g. 'wait 20s; press cross; wait 100ms;
+#                         release cross'
+#       --timeout SEC     give up after this many seconds (default 300)
+#
+# `cmd` and `run` need the vitacompanion plugin, which keeps FTP on port 1337 up while the game runs and takes
+# commands on port 1338. With vita_watchdog set in openenroth.ini, a stalled main loop crashes the game on purpose,
+# and `run` symbolizes the resulting core dump for every thread.
 #
 # Environment overrides: VITA_HOST (host:port), VITASDK, BUILD_DIR, TITLE_ID, VITA_CORE_DUMP.
 
@@ -23,6 +34,8 @@ VITASDK="${VITASDK:-$HOME/vitasdk/vitasdk}"
 BUILD_DIR="${BUILD_DIR:-build-vita-debug}"
 TITLE_ID="${TITLE_ID:-OPEN00001}"
 VITA_CORE_DUMP="${VITA_CORE_DUMP:-$(command -v vita-core-dump || echo /tmp/vita-core-dump/build/vita-core-dump)}"
+VITA_IP="${VITA_HOST%%:*}"
+VITA_CMD_PORT=1338
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_PATH="$REPO_ROOT/$BUILD_DIR"
@@ -202,15 +215,103 @@ fetch() {
     (cd "$out_dir" && "$VITA_CORE_DUMP" "$dump_name" backtrace --add-elf="$DEBUG_ELF" --show-registers) || true
 }
 
+# Sends one vitacompanion command line and prints its reply.
+vita_cmd() {
+    exec 3<>"/dev/tcp/$VITA_IP/$VITA_CMD_PORT" || { echo "vitacompanion isn't reachable on $VITA_IP:$VITA_CMD_PORT" >&2; return 1; }
+    printf '%s\n' "$1" >&3
+    timeout "${2:-5}" cat <&3 || true
+    exec 3<&- 3>&-
+}
+
+remote_size() {
+    curl_vita -I "ftp://$VITA_HOST$1" 2>/dev/null | tr -d '\r' | sed -n 's/^Content-Length: //p'
+}
+
+run() {
+    local do_build=1 until_regex='Heartbeat' input='' timeout_s=300
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --no-build) do_build=0 ;;
+            --until)    until_regex="$2"; shift ;;
+            --input)    input="$2"; shift ;;
+            --timeout)  timeout_s="$2"; shift ;;
+            *)          echo "Unknown run option $1" >&2; exit 2 ;;
+        esac
+        shift
+    done
+
+    if [ "$do_build" = 1 ]; then
+        build
+    fi
+    deploy >/dev/null
+
+    local logs_dir='/ux0:/data/OpenEnroth/logs/' old_log old_dump
+    old_log="$(remote_name "$(newest_remote_line "$logs_dir" '/openenroth_.*\.log$/p')")"
+    old_dump="$(remote_name "$(newest_remote_line '/ux0:/data/' '/psp2core-[^ ]*\.psp2dmp\(\.tmp\)\?$/p')")"
+
+    log "Relaunching $TITLE_ID"
+    vita_cmd "quit $TITLE_ID" 3 >/dev/null || return 1
+    sleep 2
+    vita_cmd "launch $TITLE_ID" 3 >/dev/null
+    local started=$SECONDS
+    [ -n "$input" ] && (vita_cmd "$input" 600 >/dev/null &)
+
+    local log_name='' out_dir="$BUILD_PATH/diagnostics"
+    mkdir -p "$out_dir"
+    while [ -z "$log_name" ] || [ "$log_name" = "$old_log" ]; do
+        if [ $((SECONDS - started)) -gt 60 ]; then
+            echo "FAIL: no new log within 60 s of launching." >&2
+            return 1
+        fi
+        sleep 2
+        log_name="$(remote_name "$(newest_remote_line "$logs_dir" '/openenroth_.*\.log$/p')")"
+    done
+
+    log "Streaming $log_name"
+    local local_log="$out_dir/$log_name" offset=0 size dump verdict=''
+    : > "$local_log"
+    while [ -z "$verdict" ]; do
+        sleep 2
+        size="$(remote_size "$logs_dir$log_name")"
+        if [ -n "$size" ] && [ "$size" -gt "$offset" ]; then
+            curl_vita -r "$offset-" "ftp://$VITA_HOST$logs_dir$log_name" | tee -a "$local_log" |
+                grep -v -E 'Shader compiler|Loaded shader|Memory at loading' || true
+            offset="$size"
+            if tail -c +1 "$local_log" | grep -q -E "$until_regex"; then
+                verdict="PASS: log matched '$until_regex' after $((SECONDS - started)) s."
+            fi
+        fi
+        dump="$(remote_name "$(newest_remote_line '/ux0:/data/' '/psp2core-[^ ]*\.psp2dmp\(\.tmp\)\?$/p')")"
+        if [ -n "$dump" ] && [ "$dump" != "$old_dump" ]; then
+            sleep 3 # The dump is still being written when it first shows up.
+            verdict="CRASH: $dump after $((SECONDS - started)) s."
+            curl_vita -o "$out_dir/$dump" "ftp://$VITA_HOST/ux0:/data/$dump"
+            if [ -x "$VITA_CORE_DUMP" ]; then
+                (cd "$out_dir" && "$VITA_CORE_DUMP" "$dump" backtrace --add-elf="$DEBUG_ELF" --thread=all) || true
+            fi
+        elif [ $((SECONDS - started)) -gt "$timeout_s" ]; then
+            verdict="TIMEOUT: no verdict after $timeout_s s, last line: $(tail -n 1 "$local_log")"
+        fi
+    done
+
+    log "Timeline"
+    grep -E 'Shaders reloaded|Game LODs loaded|Engine data initialized|Movie .* ready|level loaded|Heartbeat|stalled' \
+        "$local_log" | cut -c1-200 || true
+    printf '\n%s\nFull log: %s\n' "$verdict" "$local_log"
+    case "$verdict" in PASS*) return 0 ;; *) return 1 ;; esac
+}
+
 case "${1:-all}" in
     build)      build ;;
     deploy)     deploy ;;
     vpk)        build; vpk ;;
     deploy-vpk) deploy_vpk ;;
     fetch)      fetch ;;
+    cmd)        vita_cmd "$2" ;;
+    run)        shift; run "$@" ;;
     configure)  log "Reconfiguring $BUILD_DIR" && cmake -S "$REPO_ROOT" -B "$BUILD_PATH" ;;
     # Note the plain `;`: bash suppresses errexit for a function called from an `&&` list, which would make a failed
     # build silently package and deploy the previous binary.
     all)        build; deploy ;;
-    *)          echo "Usage: $0 [build|deploy|vpk|deploy-vpk|fetch|configure]" >&2 && exit 2 ;;
+    *)          echo "Usage: $0 [build|deploy|vpk|deploy-vpk|fetch|cmd|run|configure]" >&2 && exit 2 ;;
 esac

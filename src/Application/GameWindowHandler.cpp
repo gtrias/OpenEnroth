@@ -39,6 +39,9 @@
 #include "Library/Platform/Interface/PlatformGamepad.h"
 
 #include "Library/Platform/Proxy/ProxyEventLoop.h"
+#ifdef __vita__
+#include "Library/Platform/Vita/VitaDiagnostics.h"
+#endif
 #include "Utility/Streams/FileOutputStream.h"
 
 static char PlatformKeyToChar(PlatformKey key, PlatformModifiers mods) {
@@ -85,6 +88,9 @@ GameWindowHandler::~GameWindowHandler() {}
 void GameWindowHandler::processMessages(PlatformEventHandler *eventHandler) {
     ProxyEventLoop::processMessages(eventHandler);
     UpdateVirtualCursor();
+#ifdef __vita__
+    vitaMainLoopTick();
+#endif
 }
 
 void GameWindowHandler::UpdateVirtualCursor() {
