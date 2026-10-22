@@ -207,6 +207,21 @@ class AVAudioStream : public AVStreamWrapper {
         return result;
     }
 
+    /**
+     * @param avpacket                  Audio packet to decode.
+     * @return                          All samples of the packet as interleaved 16-bit stereo buffers.
+     */
+    std::vector<Blob> decodePacket(AVPacket *avpacket) {
+        std::vector<Blob> result;
+        if (Blob first = decode_frame(avpacket))
+            result.push_back(std::move(first));
+        while (!queue.empty()) {
+            result.push_back(std::move(queue.front()));
+            queue.pop();
+        }
+        return result;
+    }
+
  protected:
     SwrContext *converter = nullptr;
 };
@@ -348,7 +363,6 @@ class Movie : public IMovie {
             _texture->release();
         }
 
-        while (!_binkBuffer.empty()) _binkBuffer.pop();
         Close();
     }
 
@@ -639,37 +653,27 @@ class Movie : public IMovie {
     virtual bool prepare() override {
         _texture = GraphicsImage::Create(GetWidth(), GetHeight());
         if (GetFormat() == "bink") {
-            // loop through once and add all audio packets to queue
-            while (provider && av_read_frame(format_ctx, &_binkPacket) >= 0) {
-                if (_binkPacket.stream_index == audio.stream_idx) {
-                    Blob buffer = audio.decode_frame(&_binkPacket);
-                    if (buffer) _binkBuffer.push(std::move(buffer));
-                }
-                av_packet_unref(&_binkPacket);
-            }
-            MM_TRACE("Audio Packets Queued");
-
-            // reset video to start
-            int err = avformat_seek_file(format_ctx, -1, 0, 0, 0, AVSEEK_FLAG_BACKWARD);
-            //int err = av_seek_frame(format_ctx, -1, 0, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY);
-            if (err < 0) {
-                MM_WARNING("Seek to start failed! - Exit Movie");
-                return false;
-            }
             start_time = std::chrono::system_clock::now();
-            MM_TRACE("Video stream reset");
-
             _lastVideoPts = -1;
             _currentTime = std::chrono::system_clock::now();
-            _audioUpdateRate = (30.0f * video.frame_len) / 1000.0f;
         }
         return true;
     }
 
     virtual bool renderFrame() override {
-        Blob buffer;
         if (GetFormat() == "bink") {
             if (av_read_frame(format_ctx, &_binkPacket) >= 0) {
+                // Audio is streamed as soon as it's read, so that it stays ahead of the video frames it goes with.
+                if (_binkPacket.stream_index == audio.stream_idx) {
+                    if (provider && audio_data_in_device)
+                        for (const Blob &samples : audio.decodePacket(&_binkPacket))
+                            provider->Stream16(audio_data_in_device, samples.size() / 2, samples.data());
+                    if (video.last_frame)
+                        _renderTexture(video.last_frame);
+                    av_packet_unref(&_binkPacket);
+                    return false;
+                }
+
                 int desired_frame_number = 0;
                 do {
                     // get playback time - and wait till we need the next frame
@@ -679,32 +683,7 @@ class Movie : public IMovie {
                     std::this_thread::sleep_for(5ms);
                 } while (_lastVideoPts == desired_frame_number);
 
-                // ignore audio packets
-                if (_binkPacket.stream_index == audio.stream_idx) {
-                    // but still render the last frame
-                    if (video.last_frame) {
-                        _renderTexture(video.last_frame);
-                    }
-                    av_packet_unref(&_binkPacket);
-                    return false;
-                }
-
                 if (_binkPacket.stream_index == video.stream_idx) {
-                    // check if anymore sound frames still in decoder
-                    if (provider && audio.stream_idx >= 0)
-                        buffer = audio.decode_frame(nullptr);
-
-                    // stream required sound frames
-                    // nwc and intro are 15fps vid but need 30fps sound
-                    // jvc is 10fps video but need 30 fps sound
-                    if (!_binkBuffer.empty()) {
-                        if (provider)
-                            provider->Stream16(audio_data_in_device,
-                                _binkBuffer.front().size() / 2,
-                                _binkBuffer.front().data());
-                        _binkBuffer.pop();
-                    }
-
                     // Decode video frame and show
                     _lastVideoPts = _binkPacket.pts;
                     video.decode_frame(&_binkPacket);
@@ -770,12 +749,9 @@ class Movie : public IMovie {
 
     // Bink video properties
     AVPacket _binkPacket;
-    // Bink decoded audio buffer
-    std::queue<Blob> _binkBuffer;
     int _lastVideoPts = -1;
     int _desiredFrameNumber;
     std::chrono::system_clock::time_point _currentTime;
-    int _audioUpdateRate;
 };
 
 void MPlayer::Initialize() {
