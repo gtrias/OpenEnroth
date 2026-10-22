@@ -19,32 +19,32 @@ int64_t nowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-void diagnosticsThread(int stallSeconds) {
+void watchdogThread(int stallSeconds) {
     // A main thread spinning at the default priority on the same core would starve this thread, so run above it on
-    // a core of its own.
+    // a core of its own. It never logs: a stall can come from file I/O hanging, and a log write would hang it too.
     sceKernelChangeThreadPriority(sceKernelGetThreadId(), 64);
     sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_2);
 
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (nowMs() - lastTickMs.load() > stallSeconds * 1000ll)
+            __builtin_trap();
+    }
+}
+
+void heartbeatThread() {
     constexpr int64_t HEARTBEAT_MS = 10000;
     uint64_t previousTicks = mainLoopTicks.load();
     int64_t previousHeartbeatMs = nowMs();
 
     while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(HEARTBEAT_MS));
         int64_t now = nowMs();
-        int64_t lastTick = lastTickMs.load();
-        int64_t stallMs = lastTick ? now - lastTick : 0;
-
-        if (stallSeconds > 0 && stallMs > stallSeconds * 1000ll)
-            __builtin_trap(); // Not logged: the stalled main thread may be the one holding the logger's lock.
-
-        if (now - previousHeartbeatMs >= HEARTBEAT_MS) {
-            uint64_t ticks = mainLoopTicks.load();
-            float fps = (ticks - previousTicks) * 1000.0f / (now - previousHeartbeatMs);
-            MM_INFO("Heartbeat: {:.1f} fps, main loop last ticked {} ms ago.", fps, stallMs);
-            previousTicks = ticks;
-            previousHeartbeatMs = now;
-        }
+        uint64_t ticks = mainLoopTicks.load();
+        float fps = (ticks - previousTicks) * 1000.0f / (now - previousHeartbeatMs);
+        MM_INFO("Heartbeat: {:.1f} fps, main loop last ticked {} ms ago.", fps, now - lastTickMs.load());
+        previousTicks = ticks;
+        previousHeartbeatMs = now;
     }
 }
 } // namespace
@@ -52,7 +52,9 @@ void diagnosticsThread(int stallSeconds) {
 void startVitaDiagnostics(int stallSeconds) {
     MM_INFO("Vita diagnostics started, main loop stall limit {} s (0 = off).", stallSeconds);
     lastTickMs.store(nowMs());
-    std::thread(diagnosticsThread, stallSeconds).detach();
+    std::thread(heartbeatThread).detach();
+    if (stallSeconds > 0)
+        std::thread(watchdogThread, stallSeconds).detach();
 }
 
 void vitaMainLoopTick() {
