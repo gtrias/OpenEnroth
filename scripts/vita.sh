@@ -14,6 +14,7 @@
 #   scripts/vita.sh fetch       # download the newest log & crash dump, and symbolize the dump against the debug ELF
 #   scripts/vita.sh             # build + deploy
 #   scripts/vita.sh cmd 'quit OPEN00001'   # send a vitacompanion command (port 1338)
+#   scripts/vita.sh dump                   # crash the running game on purpose and show where its main thread was
 #   scripts/vita.sh run [options]          # build, deploy, relaunch on the Vita, stream the log until a verdict
 #       --no-build        deploy the current eboot.bin as is
 #       --until REGEX     stop with success once a log line matches (default: the first heartbeat after the menu)
@@ -295,6 +296,7 @@ run() {
             curl_vita -o "$out_dir/$dump" "ftp://$VITA_HOST/ux0:/data/$dump"
             if [ -x "$VITA_CORE_DUMP" ]; then
                 (cd "$out_dir" && "$VITA_CORE_DUMP" "$dump" backtrace --add-elf="$DEBUG_ELF" --thread=all) || true
+                (cd "$out_dir" && "$REPO_ROOT/scripts/vita_stack_scan.py" "$dump" "$DEBUG_ELF" 0) || true
             fi
         elif [ $((SECONDS - started)) -gt "$timeout_s" ]; then
             verdict="TIMEOUT: no verdict after $timeout_s s, last line: $(tail -n 1 "$local_log")"
@@ -308,6 +310,25 @@ run() {
     case "$verdict" in PASS*) return 0 ;; *) return 1 ;; esac
 }
 
+# Asks the running game for a core dump through the file its heartbeat thread polls, then symbolizes the main thread.
+dump() {
+    local old_dump dump out_dir="$BUILD_PATH/diagnostics"
+    old_dump="$(remote_name "$(newest_remote_line '/ux0:/data/' '/psp2core-[^ ]*\.psp2dmp\(\.tmp\)\?$/p')")"
+    printf '' | curl_vita -T - "ftp://$VITA_HOST/ux0:/data/OpenEnroth/vita-dump-now"
+    for _ in $(seq 1 30); do
+        sleep 2
+        dump="$(remote_name "$(newest_remote_line '/ux0:/data/' '/psp2core-[^ ]*\.psp2dmp$/p')")"
+        [ -n "$dump" ] && [ "$dump" != "$old_dump" ] && break
+        dump=''
+    done
+    if [ -z "$dump" ]; then
+        echo "No core dump appeared within 60 s." >&2
+        return 1
+    fi
+    curl_vita -o "$out_dir/$dump" "ftp://$VITA_HOST/ux0:/data/$dump"
+    (cd "$out_dir" && "$REPO_ROOT/scripts/vita_stack_scan.py" "$dump" "$DEBUG_ELF" 0)
+}
+
 case "${1:-all}" in
     build)      build ;;
     deploy)     deploy ;;
@@ -315,6 +336,7 @@ case "${1:-all}" in
     deploy-vpk) deploy_vpk ;;
     fetch)      fetch ;;
     cmd)        vita_cmd "$2" ;;
+    dump)       dump ;;
     run)        shift; run "$@" ;;
     configure)  log "Reconfiguring $BUILD_DIR" && cmake -S "$REPO_ROOT" -B "$BUILD_PATH" ;;
     # Note the plain `;`: bash suppresses errexit for a function called from an `&&` list, which would make a failed

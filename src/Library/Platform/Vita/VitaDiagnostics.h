@@ -11,5 +11,7 @@ void startVitaDiagnostics(int stallSeconds);
 
 /**
  * Marks one main loop iteration for `startVitaDiagnostics`.
+ *
+ * @param screen                        Engine screen type, reported in the heartbeat.
  */
-void vitaMainLoopTick();
+void vitaMainLoopTick(int screen);

@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <thread>
 
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
 #include <psp2/kernel/cpu.h>
 #include <psp2/kernel/threadmgr.h>
 
@@ -13,6 +15,8 @@
 namespace {
 std::atomic<uint64_t> mainLoopTicks = 0;
 std::atomic<int64_t> lastTickMs = 0;
+std::atomic<int64_t> longestTickMs = 0;
+std::atomic<int> currentScreen = -1;
 
 int64_t nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -34,15 +38,28 @@ void watchdogThread(int stallSeconds) {
 
 void heartbeatThread() {
     constexpr int64_t HEARTBEAT_MS = 10000;
+    constexpr const char *DUMP_REQUEST_PATH = "ux0:/data/OpenEnroth/vita-dump-now";
     uint64_t previousTicks = mainLoopTicks.load();
     int64_t previousHeartbeatMs = nowMs();
 
     while (true) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(HEARTBEAT_MS));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        // `vita.sh dump` creates this file to get a core dump of a running game, e.g. to see where a slow frame goes.
+        SceIoStat stat;
+        if (sceIoGetstat(DUMP_REQUEST_PATH, &stat) >= 0) {
+            sceIoRemove(DUMP_REQUEST_PATH);
+            MM_INFO("Core dump requested, crashing on purpose.");
+            __builtin_trap();
+        }
+
         int64_t now = nowMs();
+        if (now - previousHeartbeatMs < HEARTBEAT_MS)
+            continue;
         uint64_t ticks = mainLoopTicks.load();
         float fps = (ticks - previousTicks) * 1000.0f / (now - previousHeartbeatMs);
-        MM_INFO("Heartbeat: {:.1f} fps, main loop last ticked {} ms ago.", fps, now - lastTickMs.load());
+        MM_INFO("Heartbeat: {:.1f} fps, longest frame {} ms, screen {}, main loop last ticked {} ms ago.", fps,
+                longestTickMs.exchange(0), currentScreen.load(), now - lastTickMs.load());
         previousTicks = ticks;
         previousHeartbeatMs = now;
     }
@@ -57,7 +74,11 @@ void startVitaDiagnostics(int stallSeconds) {
         std::thread(watchdogThread, stallSeconds).detach();
 }
 
-void vitaMainLoopTick() {
+void vitaMainLoopTick(int screen) {
+    int64_t now = nowMs();
+    int64_t interval = now - lastTickMs.exchange(now, std::memory_order_relaxed);
+    if (interval > longestTickMs.load(std::memory_order_relaxed))
+        longestTickMs.store(interval, std::memory_order_relaxed);
+    currentScreen.store(screen, std::memory_order_relaxed);
     mainLoopTicks.fetch_add(1, std::memory_order_relaxed);
-    lastTickMs.store(nowMs(), std::memory_order_relaxed);
 }
