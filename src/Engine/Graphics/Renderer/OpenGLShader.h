@@ -31,7 +31,8 @@ class OpenGLShader {
     void unuse();
 
  private:
-    [[nodiscard]] unsigned loadShader(const Blob &source, int type, bool openGLES, const FileSystem *pwd);
+    [[nodiscard]] static Blob preprocessShader(const Blob &source, bool openGLES, const FileSystem *pwd);
+    [[nodiscard]] static unsigned compileShader(const Blob &preprocessedSource, int type);
 
  private:
     unsigned _id = 0;

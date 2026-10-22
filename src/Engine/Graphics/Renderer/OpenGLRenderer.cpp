@@ -3571,8 +3571,11 @@ void OpenGLRenderer::Initialize() {
         glad_glBindVertexArray = reinterpret_cast<PFNGLBINDVERTEXARRAYPROC>(openGLContext->getProcAddress("glBindVertexArray"));
         glad_glDeleteVertexArrays = reinterpret_cast<PFNGLDELETEVERTEXARRAYSPROC>(openGLContext->getProcAddress("glDeleteVertexArrays"));
         glad_glBlitFramebuffer = reinterpret_cast<PFNGLBLITFRAMEBUFFERPROC>(openGLContext->getProcAddress("glBlitFramebuffer"));
-        if (!glad_glGenVertexArrays || !glad_glBindVertexArray || !glad_glDeleteVertexArrays || !glad_glBlitFramebuffer)
-            MM_ERROR("vitaGL did not provide the vertex array object or framebuffer blit entry points.");
+        glad_glGetProgramBinary = reinterpret_cast<PFNGLGETPROGRAMBINARYPROC>(openGLContext->getProcAddress("glGetProgramBinary"));
+        glad_glProgramBinary = reinterpret_cast<PFNGLPROGRAMBINARYPROC>(openGLContext->getProcAddress("glProgramBinary"));
+        if (!glad_glGenVertexArrays || !glad_glBindVertexArray || !glad_glDeleteVertexArrays || !glad_glBlitFramebuffer ||
+            !glad_glGetProgramBinary || !glad_glProgramBinary)
+            MM_ERROR("vitaGL did not provide the vertex array object, framebuffer blit or program binary entry points.");
 #endif
     } else {
         version = gladLoadGLUserPtr(gladLoadFunc, openGLContext);

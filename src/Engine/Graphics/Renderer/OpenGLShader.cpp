@@ -1,11 +1,17 @@
 #include "OpenGLShader.h"
 
+#include <cassert>
 #include <charconv>
 #include <cctype>
+#include <cstdint>
 #include <string>
+#include <utility>
 
 #include <glad/gl.h> // NOLINT: this is not a C system include.
 
+#include "Engine/Resources/EngineFileSystem.h"
+
+#include "Library/FileSystem/Interface/FileSystem.h"
 #include "Library/Logger/Logger.h"
 #include "Library/Preprocessor/Preprocessor.h"
 
@@ -71,12 +77,51 @@ OpenGLShader::~OpenGLShader() {
     release();
 }
 
+#ifdef __vita__
+/**
+ * @param data                          Bytes to hash.
+ * @param hash                          Hash to continue from.
+ * @return                              64-bit FNV-1a hash, stable across runs unlike `std::hash`.
+ */
+static uint64_t fnv1a(std::string_view data, uint64_t hash = 14695981039346656037ull) {
+    for (char c : data)
+        hash = (hash ^ static_cast<unsigned char>(c)) * 1099511628211ull;
+    return hash;
+}
+
+static std::string programCachePath(const Blob &vertSource, const Blob &fragSource) {
+    uint64_t hash = fnv1a("vitaGL program binary v1");
+    hash = fnv1a(vertSource.str(), hash);
+    hash = fnv1a(fragSource.str(), hash);
+    return fmt::format("shader_cache/{:016x}.bin", hash);
+}
+#endif
+
 bool OpenGLShader::load(const Blob &vertSource, const Blob &fragSource, bool openGLES, const FileSystem *pwd) {
-    GLuint vertex = loadShader(vertSource, GL_VERTEX_SHADER, openGLES, pwd);
+    Blob vertPreprocessed = preprocessShader(vertSource, openGLES, pwd);
+    Blob fragPreprocessed = preprocessShader(fragSource, openGLES, pwd);
+    if (!vertPreprocessed || !fragPreprocessed)
+        return false;
+    _paths = fmt::format("{}+{}", vertSource.displayPath(), fragSource.displayPath());
+
+#ifdef __vita__
+    // Compiling the shaders on the console takes most of startup, so linked programs are cached on the memory card.
+    std::string cachePath = programCachePath(vertPreprocessed, fragPreprocessed);
+    if (ufs->exists(cachePath)) {
+        Blob binary = ufs->read(cachePath);
+        GLuint program = glCreateProgram();
+        glProgramBinary(program, 0, binary.data(), binary.size());
+        _id = program;
+        MM_INFO("Loaded shader program '{}' from '{}'.", _paths, cachePath);
+        return true;
+    }
+#endif
+
+    GLuint vertex = compileShader(vertPreprocessed, GL_VERTEX_SHADER);
     if (vertex == 0)
         return false;
 
-    GLuint fragment = loadShader(fragSource, GL_FRAGMENT_SHADER, openGLES, pwd);
+    GLuint fragment = compileShader(fragPreprocessed, GL_FRAGMENT_SHADER);
     if (fragment == 0) {
         glDeleteShader(vertex);
         return false;
@@ -102,13 +147,25 @@ bool OpenGLShader::load(const Blob &vertSource, const Blob &fragSource, bool ope
 
     std::string errors = compileErrors(result, /*isShader=*/false);
     if (!errors.empty()) {
-        MM_ERROR("Could not link shader program '{}+{}':\n{}", vertSource.displayPath(), fragSource.displayPath(), errors);
+        MM_ERROR("Could not link shader program '{}':\n{}", _paths, errors);
         glDeleteProgram(result);
         return false;
     }
 
+#ifdef __vita__
+    GLint binarySize = 0;
+    glGetProgramiv(result, GL_PROGRAM_BINARY_LENGTH, &binarySize);
+    if (binarySize > 0) {
+        std::string binary(binarySize, '\0');
+        GLsizei written = 0;
+        GLenum format = 0;
+        glGetProgramBinary(result, binarySize, &written, &format, binary.data());
+        binary.resize(written);
+        ufs->write(cachePath, Blob::fromString(std::move(binary)));
+    }
+#endif
+
     _id = result;
-    _paths = fmt::format("{}+{}", vertSource.displayPath(), fragSource.displayPath());
     return true;
 }
 
@@ -139,7 +196,7 @@ void OpenGLShader::unuse() {
     glUseProgram(0);
 }
 
-unsigned OpenGLShader::loadShader(const Blob &source, int type, bool openGLES, const FileSystem *pwd) {
+Blob OpenGLShader::preprocessShader(const Blob &source, bool openGLES, const FileSystem *pwd) {
     assert(pwd);
 
     // Preprocess source with version and GL_ES define in preamble.
@@ -154,19 +211,18 @@ unsigned OpenGLShader::loadShader(const Blob &source, int type, bool openGLES, c
 #else
     std::string_view preamble = openGLES ? "#version 320 es\n#define GL_ES\n" : "#version 410 core\n";
 #endif
-    Blob preprocessedSource;
     try {
         static constexpr std::string_view glslDirectives[] = {"version", "extension"};
-        preprocessedSource = pp::preprocess(source, pwd, preamble, glslDirectives);
+        return pp::preprocess(source, pwd, preamble, glslDirectives).withDisplayPath(source.displayPath());
     } catch (const std::exception &e) {
         MM_ERROR("Could not preprocess shader '{}': {}", source.displayPath(), e.what());
-        return 0;
+        return Blob();
     }
+}
 
-    // Compile shader.
+unsigned OpenGLShader::compileShader(const Blob &preprocessedSource, int type) {
     const char *sources[1] = {static_cast<const char *>(preprocessedSource.data())};
     const GLint lengths[1] = {static_cast<GLint>(preprocessedSource.size())};
-
 
     GLuint result = glCreateShader(type);
     glShaderSource(result, 1, sources, lengths);
@@ -174,11 +230,11 @@ unsigned OpenGLShader::loadShader(const Blob &source, int type, bool openGLES, c
 
     std::string errors = compileErrors(result, /*isShader=*/true);
     if (!errors.empty()) {
-        MM_ERROR("Could not compile shader '{}':\n{}", source.displayPath(), errors);
+        MM_ERROR("Could not compile shader '{}':\n{}", preprocessedSource.displayPath(), errors);
         glDeleteShader(result);
         return 0;
     }
 
-    MM_INFO("Loaded shader '{}'.", source.displayPath());
+    MM_INFO("Loaded shader '{}'.", preprocessedSource.displayPath());
     return result;
 }
