@@ -89,7 +89,7 @@ void GameWindowHandler::processMessages(PlatformEventHandler *eventHandler) {
     ProxyEventLoop::processMessages(eventHandler);
     UpdateVirtualCursor();
 #ifdef __vita__
-    vitaMainLoopTick(std::to_underlying(current_screen_type));
+    vitaMainLoopTick(std::to_underlying(current_screen_type), engine ? std::to_underlying(engine->_currentLoadedMapId) : -1);
 #endif
 }
 

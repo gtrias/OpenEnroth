@@ -17,6 +17,7 @@ std::atomic<uint64_t> mainLoopTicks = 0;
 std::atomic<int64_t> lastTickMs = 0;
 std::atomic<int64_t> longestTickMs = 0;
 std::atomic<int> currentScreen = -1;
+std::atomic<int> currentMap = -1;
 
 int64_t nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -24,10 +25,10 @@ int64_t nowMs() {
 }
 
 void watchdogThread(int stallSeconds) {
-    // A main thread spinning at the default priority on the same core would starve this thread, so run above it on
-    // a core of its own. It never logs: a stall can come from file I/O hanging, and a log write would hang it too.
+    // Runs at the highest user priority on whichever core is free, so a thread spinning elsewhere can't starve it.
+    // It never logs: a stall can come from file I/O hanging, and a log write would hang it too.
     sceKernelChangeThreadPriority(sceKernelGetThreadId(), 64);
-    sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_2);
+    sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_ALL);
 
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -58,8 +59,8 @@ void heartbeatThread() {
             continue;
         uint64_t ticks = mainLoopTicks.load();
         float fps = (ticks - previousTicks) * 1000.0f / (now - previousHeartbeatMs);
-        MM_INFO("Heartbeat: {:.1f} fps, longest frame {} ms, screen {}, main loop last ticked {} ms ago.", fps,
-                longestTickMs.exchange(0), currentScreen.load(), now - lastTickMs.load());
+        MM_INFO("Heartbeat: {:.1f} fps, longest frame {} ms, screen {}, map {}, main loop last ticked {} ms ago.", fps,
+                longestTickMs.exchange(0), currentScreen.load(), currentMap.load(), now - lastTickMs.load());
         previousTicks = ticks;
         previousHeartbeatMs = now;
     }
@@ -74,11 +75,12 @@ void startVitaDiagnostics(int stallSeconds) {
         std::thread(watchdogThread, stallSeconds).detach();
 }
 
-void vitaMainLoopTick(int screen) {
+void vitaMainLoopTick(int screen, int map) {
     int64_t now = nowMs();
     int64_t interval = now - lastTickMs.exchange(now, std::memory_order_relaxed);
     if (interval > longestTickMs.load(std::memory_order_relaxed))
         longestTickMs.store(interval, std::memory_order_relaxed);
     currentScreen.store(screen, std::memory_order_relaxed);
+    currentMap.store(map, std::memory_order_relaxed);
     mainLoopTicks.fetch_add(1, std::memory_order_relaxed);
 }

@@ -13,5 +13,6 @@ void startVitaDiagnostics(int stallSeconds);
  * Marks one main loop iteration for `startVitaDiagnostics`.
  *
  * @param screen                        Engine screen type, reported in the heartbeat.
+ * @param map                           Loaded map id, reported in the heartbeat.
  */
-void vitaMainLoopTick(int screen);
+void vitaMainLoopTick(int screen, int map);
