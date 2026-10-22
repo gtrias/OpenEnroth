@@ -68,11 +68,10 @@ VitaOpenGLContext::VitaOpenGLContext(int width, int height) {
     MM_INFO("Initializing vitaGL display at {}x{} (window reports {}x{}).",
             VITA_SCREEN_WIDTH, VITA_SCREEN_HEIGHT, width, height);
 
-    // vitaGL hands itself (free memory - threshold) as its own pools, so the threshold is what's left to the engine.
-    // Too small a threshold and vitaGL swallows (almost) all free user RAM; too large and vitaGL ends up with nothing
-    // to work with. With the LODs streamed from disk (see LodReader::open(FileSystem *)) the engine doesn't need much,
-    // so leave vitaGL the larger share.
-    constexpr int RAM_RESERVED_FOR_ENGINE = 64 * 1024 * 1024;
+    // vitaGL hands itself (free memory - threshold) as its own pools. The engine allocates from newlib's heap, which
+    // is reserved before this point (see _newlib_heap_size_user), so the threshold only has to cover what the system
+    // allocates outside of both: thread stacks, file and audio buffers.
+    constexpr int RAM_RESERVED_FOR_ENGINE = 16 * 1024 * 1024;
     (void) vglInitExtended(0, VITA_SCREEN_WIDTH, VITA_SCREEN_HEIGHT, RAM_RESERVED_FOR_ENGINE, SCE_GXM_MULTISAMPLE_NONE);
     shark_install_log_cb(&logShaderCompilerMessage);
     shark_set_warnings_level(SHARK_WARN_SILENT);

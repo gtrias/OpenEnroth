@@ -168,6 +168,11 @@ int openEnrothMain(int argc, char **argv) {
 
 extern "C" __attribute__((used))
 const SceSize sceUserMainThreadStackSize = 8 * 1024 * 1024;
+
+// Every engine allocation comes out of newlib's heap, which defaults to 128 MiB. vitaGL takes its pools from what
+// the system has left over, see VitaOpenGLContext, so the two sizes are tuned together.
+extern "C" __attribute__((used))
+unsigned int _newlib_heap_size_user = 176 * 1024 * 1024;
 #endif
 
 int platformMain(int argc, char **argv) {
