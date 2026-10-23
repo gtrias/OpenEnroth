@@ -21,7 +21,7 @@ include(CheckLinkerFlag)
 include(Assertions)
 
 # Defaults.
-if (CMAKE_BUILD_TYPE)
+if (CMAKE_BUILD_TYPE AND NOT OE_BUILD_PLATFORM STREQUAL "vita") # Vita dependencies come from the VitaSDK packages.
     set(OE_USE_PREBUILT_DEPENDENCIES_DEFAULT ON)
 else()
     set(OE_USE_PREBUILT_DEPENDENCIES_DEFAULT OFF)
@@ -74,6 +74,9 @@ endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
     if(OE_BUILD_PLATFORM STREQUAL "vita")
         add_compile_options(-D_POSIX_C_SOURCE=200809L) # Vita newlib: expose POSIX fileno etc. (_DEFAULT_SOURCE would also enable ctype _N/_U/_L macros that collide with ztd template params).
+        # The snapshot code passes pointers into packed structs as plain int64_t* and friends. Vectorized code
+        # stores through them with NEON alignment hints, which fault on ARMv7 when the member isn't 8-byte aligned.
+        add_compile_options(-fno-tree-vectorize)
     endif()
     add_compile_options(-Werror=return-type) # Control reaches the end of non-void function. This is an error on MSVC.
     add_compile_options(-Werror=unused-result) # Ignoring return value of function declared with 'nodiscard' attribute.

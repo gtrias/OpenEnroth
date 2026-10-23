@@ -26,7 +26,8 @@
 # commands on port 1338. With vita_watchdog set in openenroth.ini, a stalled main loop crashes the game on purpose,
 # and `run` symbolizes the resulting core dump for every thread.
 #
-# Environment overrides: VITA_HOST (host:port), VITASDK, BUILD_DIR, TITLE_ID, VITA_CORE_DUMP.
+# Environment overrides: VITA_HOST (host:port), VITASDK, BUILD_DIR, BUILD_TYPE (applies to a fresh build directory),
+# APP_VER (VPK version, NN.NN), TITLE_ID, VITA_CORE_DUMP.
 
 set -euo pipefail
 
@@ -34,6 +35,8 @@ VITA_HOST="${VITA_HOST:-192.168.1.31:1337}"
 VITASDK="${VITASDK:-$HOME/vitasdk/vitasdk}"
 BUILD_DIR="${BUILD_DIR:-build-vita-debug}"
 TITLE_ID="${TITLE_ID:-OPEN00001}"
+BUILD_TYPE="${BUILD_TYPE:-Debug}"
+APP_VER="${APP_VER:-00.01}"
 VITA_CORE_DUMP="${VITA_CORE_DUMP:-$(command -v vita-core-dump || echo /tmp/vita-core-dump/build/vita-core-dump)}"
 VITA_IP="${VITA_HOST%%:*}"
 VITA_CMD_PORT=1338
@@ -90,6 +93,7 @@ build() {
         log "Reconfiguring $BUILD_DIR"
         if [[ ! -f "$BUILD_PATH/CMakeCache.txt" ]]; then
             cmake -S "$REPO_ROOT" -B "$BUILD_PATH" \
+                -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
                 -DCMAKE_TOOLCHAIN_FILE="$VITASDK/share/vita.toolchain.cmake" \
                 -DOpenAL_DIR="$VITASDK/arm-vita-eabi/lib/cmake/OpenAL" >/dev/null
         else
@@ -139,7 +143,7 @@ vpk() {
     log "Packaging $VPK"
     local sfo="$BUILD_PATH/vpk/param.sfo"
     # ATTRIBUTE2=12 grants the extended memory budget the engine relies on.
-    "$VITASDK/bin/vita-mksfoex" -s TITLE_ID="$TITLE_ID" -s APP_VER=00.01 -d ATTRIBUTE2=12 "OpenEnroth" "$sfo"
+    "$VITASDK/bin/vita-mksfoex" -s TITLE_ID="$TITLE_ID" -s APP_VER="$APP_VER" -d ATTRIBUTE2=12 "OpenEnroth" "$sfo"
 
     local args=(-s "$sfo" -b "$EBOOT") file
     while IFS= read -r file; do

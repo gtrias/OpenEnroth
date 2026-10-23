@@ -1,0 +1,89 @@
+name: Build Vita
+
+# Builds the PS Vita VPK. Every push to vita-port uploads it as a workflow artifact. A vita-vMAJOR.MINOR tag also
+# publishes it as a GitHub prerelease, with packaging/vita/RELEASE_NOTES.md as the description.
+
+on:
+  push:
+    branches:
+      - 'vita-port'
+    tags:
+      - 'vita-v*'
+  workflow_dispatch:
+
+concurrency:
+  group: build-vita-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_DIR: build-vita-release
+  BUILD_TYPE: Release
+
+jobs:
+  vita:
+    runs-on: ubuntu-24.04
+    # The nightly series is the one the port is developed against. Pinned by digest because dated nightly tags get
+    # pruned.
+    container:
+      image: vitasdk/vitasdk:nightly@sha256:51e27ce9c3399b3cdc37288f6e593f42a6f62b65234e1d49652dcaf6b9db7231
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.0.0
+        with:
+          submodules: recursive
+
+      - name: Mark the workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # The image ships CMake 3.28, ztd.text needs 3.31.
+      - name: Install CMake
+        shell: bash
+        run: |
+          curl -fsSL -o /tmp/cmake.tar.gz \
+              https://github.com/Kitware/CMake/releases/download/v4.1.2/cmake-4.1.2-linux-x86_64.tar.gz
+          echo "773cc679c3a7395413bd096523f8e5d6c39f8718af4e12eb4e4195f72f35e4ab  /tmp/cmake.tar.gz" | sha256sum --check
+          tar -xzf /tmp/cmake.tar.gz -C /opt
+          echo "/opt/cmake-4.1.2-linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" =~ ^refs/tags/vita-v([0-9]+)\.([0-9]+)$ ]]; then
+              printf 'app_ver=%02d.%02d\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              echo "Release tags must look like vita-vMAJOR.MINOR, got $GITHUB_REF" >&2
+              exit 1
+          else
+              echo "app_ver=00.00" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache FFmpeg
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BUILD_DIR }}/ffmpeg-vita
+          key: vita-ffmpeg-${{ hashFiles('scripts/build_vita_ffmpeg.sh') }}
+
+      - name: Build VPK
+        shell: bash
+        env:
+          VITASDK: /usr/local/vitasdk
+          APP_VER: ${{ steps.version.outputs.app_ver }}
+        run: ./scripts/vita.sh vpk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenEnroth-vita
+          path: ${{ env.BUILD_DIR }}/OpenEnroth.vpk
+
+      - name: Publish prerelease
+        if: startsWith(github.ref, 'refs/tags/vita-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          name: OpenEnroth for PS Vita ${{ github.ref_name }}
+          body_path: packaging/vita/RELEASE_NOTES.md
+          files: ${{ env.BUILD_DIR }}/OpenEnroth.vpk
